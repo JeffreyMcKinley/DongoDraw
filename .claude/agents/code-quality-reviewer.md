@@ -56,7 +56,10 @@ Read surrounding context from unchanged files as needed, but do not report findi
 
 **C# / .NET Android Considerations**
 
-- `async` methods return `Task`/`Task<T>`, never `async void` outside event handlers
+- `async` methods return `Task`/`Task<T>`, never `async void` outside event handlers — with one
+  sanctioned exception, the player screen's fire-and-forget decode continuations (`BuildSession`,
+  `DecodeAhead`), which nothing awaits and whose whole bodies are wrapped so nothing escapes to the
+  looper (ARCHITECTURE.md §7)
 - `ConfigureAwait` and UI-thread affinity: Android UI mutations must happen on the main thread (`RunOnUiThread`)
 - Activity/Fragment lifecycle correctness — state saved in `OnSaveInstanceState`, resources released in `OnPause`/`OnDestroy`
 - `IDisposable` honored with `using`, especially for `Bitmap`, streams, and LiteDB connections
@@ -120,13 +123,17 @@ a layering scheme the project has not adopted.
   `LiteDatabase` (`INV-STO-1`). One document, `Id == 1`, in the `settings` collection; the store
   stamps the id, callers never do. New preferences are new defaulted properties on `Settings`,
   not a second document or collection. No BSON or LiteDB vocabulary above the store.
-- **Threading model**: everything runs on the main thread and Core is synchronous by design.
-  Nothing in the domain sleeps, posts, schedules, or starts a thread (`INV-X-9`). Android UI
-  objects are touched on the main thread only; the repaint loop uses `Handler(Looper.MainLooper)`
-  and posts/removes **one stored `Java.Lang.IRunnable`** — a callback posted as an `Action` and
-  expected to be removable is a Critical leak. Countdown time comes from a monotonic clock, never
-  from counting ticks (`INV-CD-1`). Any background work introduced belongs in the Android layer,
-  marshalled back through the main-looper `Handler`, and cancelled in `OnPause`/`OnDestroy`.
+- **Threading model**: Core is synchronous by design and nothing in the domain sleeps, posts,
+  schedules, or starts a thread (`INV-X-9`). All background work belongs to the player screen, which
+  decodes reference images off the UI thread — the session's construction and the next pose while
+  the current one is up. Everything else runs on the main thread. Android UI objects are touched on
+  the main thread only; the repaint loop uses `Handler(Looper.MainLooper)` and posts/removes **one
+  stored `Java.Lang.IRunnable`** — a callback posted as an `Action` and expected to be removable is
+  a Critical leak. Countdown time comes from a monotonic clock, never from counting ticks
+  (`INV-CD-1`). Background work is marshalled back through the `await` continuation (which the
+  synchronization context posts to the same main looper — never `ConfigureAwait(false)` in an
+  Activity), is abandoned in `OnPause`/`OnDestroy`, and holds one decode slot at a time. See
+  ARCHITECTURE.md §7, which is authoritative.
 - **Forbidden** — each of these is an architecture violation, not a style opinion:
   - A rule, calculation, or state machine implemented inside an Activity
   - `Android.*` / `Java.*` referenced from `FigureDrawing.Core`

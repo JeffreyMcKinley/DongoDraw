@@ -120,7 +120,7 @@ recognises that shape and never constructs, resolves, or queries one; `Documents
 tests back it with an in-memory tree.
 
 **Injected delegate.** `DrawingSession<TImage>` takes `Func<string, TImage?> load`. The screen
-passes `LoadBitmap`; tests pass a fake. The generic parameter is what keeps `Bitmap` out of Core.
+passes `LoadPose`; tests pass a fake. The generic parameter is what keeps `Bitmap` out of Core.
 
 **Injected clock.** `DrawingSession<TImage>` takes an optional `Func<TimeSpan>? clock`, defaulting
 to a `Stopwatch`, and drives both its clocks — the drawing-time total and the pose countdown — from
@@ -132,9 +132,9 @@ under test.
 
 ## 5. State and navigation
 
-- **Session state** lives in the single `DrawingSession<Bitmap>` owned by `SessionActivity`, created
+- **Session state** lives in the single `DrawingSession<PoseImage>` owned by `SessionActivity`, created
   in `OnCreate` from intent extras. The setup pane holds no session: it evaluates a *draft* one per
-  keystroke (`DrawingSession<Bitmap>.Evaluate`), which copies no pool and starts no clock.
+  keystroke (`DrawingSession<PoseImage>.Evaluate`), which copies no pool and starts no clock.
 - **Screen-to-screen handoff** is intent extras only. `SessionActivity` declares its keys as public
   constants (`ExtraPool`, `ExtraSeconds`, `ExtraCount`, `ExtraBreak`, `ExtraShuffle`,
   `ExtraGrayscale`, `ExtraKeepAwake`, `ExtraChime`); `MainActivity.StartSession` fills them. Add a new input by adding a constant, not a string literal
@@ -170,7 +170,18 @@ under test.
 
 ## 7. Threading
 
-- Everything in the app today runs on the main thread. Core is synchronous by design.
+- Core is synchronous by design and never threads, sleeps or posts (`INV-X-9`). All background work
+  in the app belongs to the player screen, which decodes reference images off the UI thread: the
+  session's own construction (`BuildSession`, which resolves the first pose) and the next pose while
+  the current one is up (`PrefetchUpcoming` / `DecodeAhead`). Everything else runs on the main
+  thread.
+- **One decode at a time per screen.** The prefetch holds a single slot (`prefetchTask`), and a
+  request while it is occupied is dropped rather than queued — the slot re-aims itself when the
+  decode settles. Without that bound, every command that changes which image is next starts another
+  decode, and a few quick taps put several full-size decodes in flight at once.
+- A boundary that arrives before the decode finishes **waits for it** rather than starting a second
+  one. Blocking the main thread on a `Task.Run` that captured no synchronization context cannot
+  deadlock, and the wait is bounded by what is left of a decode already in progress.
 - Android UI objects may only be touched on the main thread. `SessionActivity`'s repaint loop uses
   `Handler(Looper.MainLooper)`, so it already is.
 - The repaint `Handler` posts and removes **one stored `Java.Lang.IRunnable`**. Posting an `Action`
@@ -178,9 +189,30 @@ under test.
   would survive teardown. Keep the stored-runnable pattern.
 - Countdown time comes from a monotonic clock, never from counting ticks. A slow or dropped repaint
   must not change how much time a pose gets.
-- **(confirm)** If background work is introduced — decoding off the UI thread is the obvious first
-  candidate — it belongs behind an `async` method in the Android layer, with results marshalled back
-  via the existing main-looper `Handler`, and it must be cancelled in `OnPause`/`OnDestroy`.
+- Background work belongs behind an `async` method in the Android layer, and must be abandoned in
+  `OnPause` and `OnDestroy`. `SessionActivity.PrefetchUpcoming` / `DecodeAhead` / `CancelPrefetch`
+  are the worked example.
+- **The stored-runnable rule above is about the repeating repaint queue, not about every callback.**
+  A one-shot background result comes back through the `await` continuation, which Android's
+  synchronization context posts to the same main looper. That continuation is deliberately *not*
+  removable, and must not be made so: it is the code that frees a bitmap nobody wants any more, so a
+  `RemoveCallbacks` that succeeded would strand the pixels with nothing left to release them. What
+  makes it safe instead is a generation counter compared after the `await` — a result that lost its
+  race is recycled rather than kept.
+- **Never `ConfigureAwait(false)` in an Activity.** The continuation touches views and the fields
+  that own bitmaps; resuming it on a pool thread makes every one of those a race. It is also the
+  memory barrier that publishes decoded pixels to the thread that attaches them.
+- A decode already running cannot be stopped, so "cancel" means "abandon the result", not "abort the
+  work". A `CancellationToken` still earns its place: it drops work that has not started, and
+  `ImageDecoding.DecodeSampledBitmap` checks it between its bounds pass and its decode pass, which is
+  where the multi-megabyte allocation begins. Abandoning must not clear the slot — the work is still
+  running, and a free slot would let the next repaint start a second decode beside it.
+- The whole body of an `async void` method is wrapped, not just the `await`. What follows the await
+  is JNI calls on peers that teardown may already have disposed, and an exception escaping there
+  lands on the main looper with nothing above it to catch (`INV-X-11`).
+- Work handed to the pool sets `ThreadPriority.Background` on entry and restores the previous value
+  in a `finally`: a ThreadPool worker starts at normal priority and would compete with the UI thread
+  it exists to protect, but it is shared, so it must not be left demoted.
 
 ## 8. Lifecycle and resources
 
@@ -188,8 +220,10 @@ under test.
   drawer's own pause is still in effect (`INV-CD-8`). A backgrounded app must not burn pose time or
   fire a timer while hidden, and must not come back running from a pause the drawer asked for.
 - `OnDestroy` stops the loop, clears `KeepScreenOn`, and disposes anything it owns.
-- Every queued callback must be removable, and every listener attached to a long-lived object must
-  be detached.
+- Every callback queued on the repaint `Handler` must be removable, and every listener attached to a
+  long-lived object must be detached. The one exception is the one-shot `await` continuation of §7,
+  which is deliberately not removable — it is the code that frees a bitmap nobody wants, so removing
+  it would strand the pixels — and is made safe by a generation counter instead.
 - Images are always decoded through `ImageDecoding.DecodeSampledBitmap`, never via `SetImageURI`.
   It picks a power-of-two `InSampleSize` (`BitmapMath.CalculateCropSampleSize`) from two rules: a
   request floor, which keeps the SHORT side at or above the requested size for centre-cropped tiles
@@ -200,7 +234,11 @@ under test.
   12000x900 panorama decodes at 1500x112 rather than at full width. Never decode unsampled — a
   folder of real photos will exhaust memory.
 - A screen owns the bitmaps it decoded: repointing an `ImageView` recycles the one it replaces, and
-  `OnDestroy` detaches and frees whatever is still attached. A JNI global ref keeps a Bitmap alive
+  `OnDestroy` detaches and frees whatever is still attached. The player screen has a **second**
+  owner — the one-entry prefetch cache, holding a pose nothing has attached yet — freed on every way
+  out of the screen, plus a third transient one in a decode whose result arrived too late to want.
+  Its steady-state peak is therefore two full-size poses, not one, which is part of what the decode
+  bound below is budgeted against. A JNI global ref keeps a Bitmap alive
   until a managed GC plus finalizer pass, which is far too late under a session's decode rate.
 - A single unreadable image must never sink the screen: decode failures return `null` and are
   logged, and the session skips past them with a bounded failure budget.
@@ -237,6 +275,7 @@ type owns several invariant families: the session aggregate has one file per fam
 is what keeps a 350-test suite navigable after the consolidation.
 
 **Contract tests** (`UiResourceContractTests`, `SessionScreenContractTests`, `TypefaceContractTests`,
+`SourceContractTests`,
 `FolderMemoryContractTests`, `AndroidBuildTests`) —
 a pattern worth understanding before touching the Android layer. They parse the *source and XML as
 files* rather than running them, so they need no device but still catch the runtime-only failures
@@ -244,9 +283,13 @@ that Xamarin's compile-time checks miss: a view id referenced from code but abse
 a missing string, a build property regression. `TestPaths` locates the repo root by walking up to
 `FigureDrawing.sln`, since the working directory differs between `nx` and `dotnet test`.
 
-A contract test reads *code*, not prose: `FolderMemoryContractTests` strips comments and string
-literals before it asserts anything, because an assertion a comment can satisfy stays green
-through the deletion it exists to catch. Assert the APIs a method reaches and the wiring between
+A contract test reads *code*, not prose: `SourceContract` (shared by `FolderMemoryContractTests` and
+`SessionScreenContractTests`, and tested itself in `SourceContractTests`) strips comments and string
+literals before anything is asserted, because an assertion a comment can satisfy stays green
+through the deletion it exists to catch — and one a comment can *break* fails a build that behaves.
+It also normalises line endings, since its declaration matcher anchors on end-of-line and a CRLF
+checkout would otherwise find no methods at all. It reads block bodies, not expression-bodied
+members, so anything the tier needs to assert on is written with braces. Assert the APIs a method reaches and the wiring between
 the screen's own methods; never a local's name, a literal's spelling, or a pattern's syntax — those
 fail a refactor that still behaves. Code inside an interpolation hole is stripped with its string:
 a method named in a log message is not wiring.
@@ -466,7 +509,9 @@ change:
 
 **Aggregate root: `DrawingSession<TImage>`.** It is the consistency boundary for everything about
 the run — the upcoming queue, `CompletedCount`, the drawing-time total and both clocks are only ever
-mutated through `Next` / `Skip` / `End` / `Tick` / `Pause(PauseReason)` / `Resume`, and no caller can observe them
+mutated through `Next` / `Skip` / `End` / `Tick` / `Pause(PauseReason)` / `Resume` — with one stated
+exception, `UpcomingImageId`, which may refill a drained pass in order to answer (`INV-PLY-7`) and
+changes nothing else — and no caller can observe them
 mid-transition. Its identity is positional (one live session per player screen), so it carries no
 id: a session is never stored, never compared, and never resumed. That is the reason it has no
 repository, and adding one would be the signal that the model changed, not a convenience.
@@ -489,6 +534,8 @@ test in the `DrawingSession*Tests` files, which are split by invariant family (�
 | `Remaining` is never negative; `CompletedCount` never exceeds `TargetCount` | `Next` finishes at the target; `Remaining` clamps |
 | Every image is shown once before any repeat | `Refill` rebuilds a full pass before dequeuing |
 | A tick reports the transition it made | `Tick` returns `SessionTick`, read off the phase it left behind |
+| The next id can be asked for without consuming it | `UpcomingImageId` peeks the queue; refilling a drained pass is its one mutation |
+| An unreadable image is loaded once per session | `Resolve` consults `_unreadable` before calling the loader |
 | Skip never advances `CompletedCount` and never banks time | `SkipCurrent` advances the sequence; time is banked only in `CountCurrent` and `End` |
 | `End` banks the current partial time but does not count the pose | `End` accumulates, then `Finish` |
 | Drawing time excludes all skipped time | Time is banked only in `Next` and `End` |
@@ -548,7 +595,7 @@ Android layer binds a button's `Enabled` to it and owns nothing else. Parsing li
 keeping it out of the `EditText` handler is what makes it testable.
 
 The cost of that merge is one odd-looking call: `MainActivity` says
-`DrawingSession<Bitmap>.Evaluate(...)` on a screen that never touches a bitmap. That was the
+`DrawingSession<PoseImage>.Evaluate(...)` on a screen that never touches a bitmap. That was the
 accepted trade for deleting a type whose only job was to hold four fields.
 
 ### Preferences
@@ -656,23 +703,34 @@ Live findings, ordered by how much they cost. None is a blocker; each has a stat
    aggregate has no identity and no repository, which is exactly why rotation restarts a pose. If
    FD-008's rotation handling requires survival, that is the point at which `DrawingSession` gains
    an id and a snapshot/restore pair, not a `static`.
-5. **The draft phase is generic for no reason of its own** (§17) — `DrawingSession<Bitmap>.Evaluate`
+5. **The draft phase is generic for no reason of its own** (§17) — `DrawingSession<PoseImage>.Evaluate`
    on a screen with no bitmaps. Harmless, and cheaper than keeping a type to avoid it, but it is the
    one place the merged model reads worse than what it replaced.
 6. **Zoom carries across poses.** `ViewerTools.ResetZoom` exists and nothing calls it, so a 2.5×
    zoom set for one pose is still applied to the next. `INV-VIEW-4` was written to match the code
    rather than the other way round; wiring the reset into the phase change is a one-line UX decision
    nobody has made.
-7. **Known Android-layer costs, all pre-dating the consolidation** — image decoding runs on the main
-   thread, both in the repaint loop at a pose boundary and in the folder walk on launch. (Grants
-   are no longer accumulated: picking a different folder releases the ones it supersedes and a
-   restore re-takes the one in use, `INV-REF-4`.) None is a Core concern and none is new; the
-   two decoding costs are specified in [FD-009](prds/FD-009-async-reference-library.md) and
-   [FD-010](prds/FD-010-pose-decode-off-the-tick.md).
+7. **Image decoding still runs on the main thread in the folder walk on launch** — up to 24 preview
+   thumbnails inside `OnCreate`, specified in [FD-009](prds/FD-009-async-reference-library.md).
+   (Grants are no longer accumulated: picking a different folder releases the ones it supersedes and
+   a restore re-takes the one in use, `INV-REF-4`.) Not a Core concern, and not new.
 
-   Two entries that used to sit here are closed: the pool no longer crosses to the player whole (it
-   is sampled to a bounded handoff, `INV-POOL-6`), and decoded bitmaps are now recycled by the screen
-   that decoded them.
+   Three entries that used to sit here are closed: the pool no longer crosses to the player whole
+   (it is sampled to a handoff bounded by the session's own length, `INV-POOL-6`), decoded bitmaps
+   are recycled by the screen that decoded them, and the player screen no longer decodes on the UI
+   thread at all — the next pose is decoded during the current one, the session's construction (and
+   with it the first pose) happens off the thread too, and an unreadable file is loaded once per
+   session rather than once per pass (`INV-PLY-7`, `INV-PLY-8`, FD-010).
+
+   What is left there, stated precisely because "no longer decodes on the boundary" is easy to
+   over-claim: a boundary that arrives mid-decode *waits* for the decode it already started, and a
+   boundary that skips past an unreadable id decodes the replacement itself, because only one image
+   is ever decoded ahead. Both are bounded — the first by what remains of a decode in progress, the
+   second by one image — and neither is the unbounded run the old code had. The failure budget is
+   also now the player's explicit `pool.Length * 2` rather than the implicit 100: with `INV-PLY-8`
+   the *decodes* in a hopeless run are capped by the pool rather than by the budget, but the budget
+   is larger than it was, so a wholly unreadable folder does more work before the error screen than
+   it used to. It does that work off the UI thread.
 
 ## 21. Testing the model, and what "done" looks like
 

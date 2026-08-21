@@ -7,8 +7,12 @@ namespace FigureDrawing.Tests;
 // session aggregate runs it start-to-summary (sequence, pose clock, image resolution, totals). No
 // Android/Appium here; this drives the same public surface SessionActivity drives.
 //
-// The Screen harness below mirrors that Activity's loop exactly (repaint, advance at zero,
-// pause/resume on lifecycle), so a break in the wiring shows up here instead of only on a device.
+// The Screen harness below mirrors that Activity's loop (repaint, advance at zero, pause/resume on
+// lifecycle, and decoding the next pose while the current one is up), so a break in the wiring shows
+// up here instead of only on a device. What it does NOT model is the threading: the real screen
+// decodes on a pool thread and settles the result on the main one, and the machinery that exists
+// only to make that safe — the single decode slot, the generation guard, abandoning on every way out
+// — is pinned by SessionScreenContractTests instead, being unreachable from here.
 public class SessionE2ETests
 {
     // In-memory document tree so the reference library runs for real against a picked "folder".
@@ -32,14 +36,57 @@ public class SessionE2ETests
     // Stand-in for SessionActivity: same state machine, no Android.
     sealed class Screen
     {
+        // The decode the screen would have run, and how many times it ran. The real screen decodes
+        // the next pose while the current one is up and hands the result to the loader through a
+        // one-entry cache; this models the same handoff so the boundary's cost is observable
+        // (INV-PLY-7).
+        readonly Func<string, string?> _decode;
+        string? _prefetchedId;
+        string? _prefetched;
+
         public Screen(IReadOnlyList<string> pool, SessionConfig config, Func<TimeSpan> clock,
                       Func<string, string?>? load = null)
         {
+            _decode = load ?? (id => id);
+
             Session = new DrawingSession<string>(
-                pool, config, load ?? (id => id), shuffle: false, random: new Random(3), clock: clock);
+                pool, config, Load, shuffle: false, random: new Random(3), clock: clock);
 
             Render();
         }
+
+        // What the loader does on the real screen: take what was decoded ahead if it answers for
+        // this id, and otherwise decode here and now — on the thread that must not be blocked.
+        string? Load(string id)
+        {
+            if (_prefetchedId == id)
+            {
+                var ready = _prefetched;
+                _prefetchedId = null;
+                _prefetched = null;
+                return ready;
+            }
+
+            DecodesOnTheBoundary++;
+            return _decode(id);
+        }
+
+        // Started from the tail of every repaint, exactly as Render does on the screen.
+        void PrefetchUpcoming()
+        {
+            if (Session.UpcomingImageId is not { } id || id == _prefetchedId)
+                return;
+
+            _prefetchedId = id;
+            _prefetched = _decode(id);
+            DecodesAhead++;
+        }
+
+        // How many images were decoded where it hurts — inside a tick, a command, or the session's
+        // own construction — versus ahead of time, off the repaint loop.
+        public int DecodesOnTheBoundary { get; private set; }
+
+        public int DecodesAhead { get; private set; }
 
         public DrawingSession<string> Session { get; }
 
@@ -158,6 +205,12 @@ public class SessionE2ETests
 
                 // The screen only restarts its repaint loop for a session whose clocks are running.
                 Ticking = !Session.IsPaused;
+
+                // The tail of the real Render: decode the next pose while this one is up, so the
+                // boundary has nothing left to do. Paused clocks mean no boundary is coming.
+                if (Ticking)
+                    PrefetchUpcoming();
+
                 return;
             }
 
@@ -348,6 +401,60 @@ public class SessionE2ETests
         Assert.True(session.CouldNotDisplayImage);
         Assert.Null(session.CurrentImage);
         Assert.Equal(0, session.ImagesDisplayed);
+    }
+
+    // The ticket's claim, end to end through the screen's own loop: once a session is running, a
+    // pose boundary attaches an image that was decoded while the previous pose was on screen, never
+    // one decoded on the tick. Only the session's construction decodes where it hurts — the screen
+    // does that off the UI thread for exactly this reason (INV-PLY-7).
+    [Fact]
+    public void TimedSession_DecodesEveryPoseAhead_NotOnTheBoundary()
+    {
+        var clock = new FakeClock();
+        var config = DrawingSession<string>.Evaluate("30", "4", folderSelected: true).Config!.Value;
+        var screen = new Screen(Pool("a.jpg", "b.jpg", "c.jpg", "d.jpg"), config, clock.Read);
+
+        Assert.Equal(1, screen.DecodesOnTheBoundary);      // the first pose, inside the constructor
+
+        Run(screen, clock, TimeSpan.FromSeconds(120));
+
+        Assert.True(screen.Session.IsComplete);
+        Assert.Equal(4, screen.Session.ImagesDisplayed);
+        Assert.Equal(1, screen.DecodesOnTheBoundary);      // and not one more since
+        Assert.True(screen.DecodesAhead >= 3, $"only {screen.DecodesAhead} poses were decoded ahead");
+    }
+
+    // On a device every load attempt is a two-pass open plus a real decode, and a pool smaller than
+    // the configured count comes round again and again. A session must pay that price once per
+    // broken file, not once per pass (INV-PLY-8) — while the counts it reports stay exactly what
+    // they were. Driven through the screen so the prefetch is in the picture too: a broken id is
+    // never decoded ahead either, because the session will skip it without asking.
+    [Fact]
+    public void FullSession_LoadsEachBrokenImageOnce_HoweverManyPassesItTakes()
+    {
+        var attempts = new List<string>();
+        var clock = new FakeClock();
+        var config = DrawingSession<string>.Evaluate("30", "6", folderSelected: true).Config!.Value;
+
+        // Six poses out of two drawable images: three passes through the pool, so each broken file
+        // is reached three times.
+        var screen = new Screen(
+            Pool("a.jpg", "broken1.jpg", "c.jpg", "broken2.jpg"),
+            config,
+            clock.Read,
+            load: id =>
+            {
+                attempts.Add(id);
+                return id.Contains("broken") ? null : id;
+            });
+
+        Run(screen, clock, TimeSpan.FromSeconds(200));
+
+        Assert.True(screen.Session.IsComplete);
+        Assert.Equal(6, screen.Session.ImagesDisplayed);
+        Assert.False(screen.Session.CouldNotDisplayImage);
+        Assert.Equal(1, attempts.Count(a => a.Contains("broken1")));
+        Assert.Equal(1, attempts.Count(a => a.Contains("broken2")));
     }
 
     // --- The screen's repaint loop --------------------------------------------

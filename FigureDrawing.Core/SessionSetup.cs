@@ -41,6 +41,34 @@ public static class SessionSetup
         return int.TryParse(raw.Trim(), out var value) && value > 0 ? value : null;
     }
 
+    // How many reference ids a session of this length needs in play, for a caller bounding a handoff
+    // that cannot carry the whole pool (INV-POOL-6). Lives here rather than on ReferenceLibrary
+    // because it is derived from the session's configuration: the library supplies the pool and must
+    // not have to know how long a session is (ARCHITECTURE.md §16 — the pool flows one way).
+    //
+    // Five times the pose count rather than exactly it: the player screen is handed an array and
+    // cannot re-sample, so "run it again" redraws from these same ids and a 1x bound would replay
+    // the same images in a new order. Note the trade — against the flat bound this replaced, a
+    // mid-sized library now crosses in part rather than whole, so a repeated run draws from the
+    // sample rather than from the folder.
+    //
+    // imageCount : poses the session will show. Validated as "> 0" and nothing more (INV-SET-1), so
+    //              the arithmetic runs in long: a pasted nine-digit count would otherwise overflow
+    //              and bound the handoff to a negative number, which is an empty pool.
+    // maxIds     : the caller's own ceiling — for the Android layer, what fits in an intent extra.
+    //              It wins over the floor: a caller that can carry only ten ids gets ten, never an
+    //              exception and never more than it asked for.
+    public const int HandoffPerImage = 5;
+    public const int MinHandoff = 50;
+
+    public static int HandoffBound(int imageCount, int maxIds)
+    {
+        var ceiling = Math.Max(0, maxIds);
+        var wanted = Math.Max((long)Math.Max(0, imageCount) * HandoffPerImage, MinHandoff);
+
+        return (int)Math.Min(wanted, ceiling);
+    }
+
     // How long the whole session takes end to end: every pose plus a break between each adjacent
     // pair (there is no break after the last pose). Drives the "About 12:30 including breaks" line
     // under the Start button.

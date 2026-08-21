@@ -13,12 +13,12 @@ renumber an id.
 | ID | Title | Context |
 |----|-------|---------|
 | [FD-009](FD-009-async-reference-library.md) | Reference library loads without freezing the screen | Reference Library |
-| [FD-010](FD-010-pose-decode-off-the-tick.md) | A pose boundary never blocks the repaint loop | Session Execution |
 
-Both come out of the repo-wide review of 2026-08-16, along with FD-011, which has shipped. They are
-threading work in the Android layer; FD-009 is the prerequisite in practice, since it establishes how
-this app does background work and cancellation, and FD-010 follows the same shape on the player
-screen. FD-011 went first because it touches the same `Tick` call site as FD-010.
+FD-009 comes out of the repo-wide review of 2026-08-16, along with FD-010 and FD-011, which have
+since shipped. It is the remaining main-thread decode: the folder walk and up to 24 preview
+thumbnails inside `OnCreate`. FD-010 established how this app does background work and abandonment
+(`SessionActivity.PrefetchUpcoming` / `DecodeAhead` / `CancelPrefetch`, ARCHITECTURE.md §7), so the
+shape FD-009 needs is now written down rather than hypothetical.
 
 ## Shipped
 
@@ -28,9 +28,12 @@ criteria are the invariant tables in [DOMAIN-MODEL.md](../DOMAIN-MODEL.md) and t
 [ARCHITECTURE.md §11](../ARCHITECTURE.md#11-testing-strategy). The original ticket stubs were an
 early experiment and were never committed.
 
-[FD-011](FD-011-tick-reports-what-changed.md) (the session says what changed) shipped ahead of
-FD-010, which touches the same `Tick` call site. Its criterion is `INV-SES-13` in
-[DOMAIN-MODEL.md](../DOMAIN-MODEL.md).
+[FD-011](FD-011-tick-reports-what-changed.md) (the session says what changed) and
+[FD-010](FD-010-pose-decode-off-the-tick.md) (a pose boundary never blocks the repaint loop) shipped
+together, FD-011 first because both touch the same `Tick` call site. Their criteria are `INV-SES-13`,
+`INV-PLY-7`, `INV-PLY-8` and the narrowed `INV-POOL-6` in [DOMAIN-MODEL.md](../DOMAIN-MODEL.md).
+FD-010 grew one part beyond its ticket: the handoff bound became a function of the session's length,
+because the failure budget it introduces is derived from the pool size.
 
 [FD-012](FD-012-remembered-folder.md) (the app remembers the folder you picked) shipped after the
 MVP set: the library the artist last opened is restored on launch, survives a process kill, and is

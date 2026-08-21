@@ -172,6 +172,14 @@ is why a revoked grant is no longer indistinguishable from an empty folder: it h
   from the sample as if it were the pool, so `INV-POOL-1`..`INV-POOL-4` hold unchanged on what it
   received.
 
+  How wide that bound is comes from the session's own length, not from the transport alone
+  (`SessionSetup.HandoffBound` — a setup rule, so the library is not made to know how long a session
+  is): the player is handed an array and cannot ask the library for more, so the sample is also what
+  "run it again" redraws from. It is a multiple of the pose count, floored so a short session still
+  draws from a spread and ceilinged by what the transport carries, the ceiling winning if the two
+  ever disagree. The trade against a flat bound is real and deliberate: a mid-sized library now
+  crosses in part rather than whole, so a repeated run redraws from the sample, not the folder.
+
 **Traversal is stateless.** Classification (`IsImage`, `IsDirectory`) and the depth-first policy
 hold no state between calls, so two callers can never interfere — that property must survive the
 merge into the aggregate.
@@ -256,6 +264,12 @@ Stateless domain service: parses the setup inputs, answers whether Start is allo
 the config. The evaluated result it returns is a draft session (`DrawingSession` in its `Draft`
 phase, §4.1) rather than a separate state object.
 
+It also owns the two things derived purely from a configured session's shape: `EstimateSeconds` (how
+long the run takes) and `HandoffBound(imageCount, maxIds)` (how many reference ids that run needs in
+play, `INV-POOL-6`). The second lives here rather than on `ReferenceLibrary` because the library
+supplies the pool and must not have to know how long a session is — the dependency runs one way
+(ARCHITECTURE.md §16).
+
 **Rules**
 
 - `INV-SET-1` — **Parsing is domain logic, not UI logic.** Blank, non-numeric, and non-positive
@@ -315,7 +329,7 @@ fields the session already holds, are not independent concepts. They were six ty
 | **Phases** | `Draft` → `Pose` ⇄ `Break` → `Complete` |
 | **State** | Parsed setup inputs; the upcoming queue for the current pass; current image id and its loaded image; completed and skipped counts; accumulated drawing time; time left on the current phase; run/pause state |
 | **Commands** | `Next()`, `Skip()`, `End()`, `Tick() -> SessionTick`, `Pause(PauseReason = Lifecycle)`, `Resume()` |
-| **Queries** | Every phase: `Phase`, `SecondsPerImage`, `ImageCount`, `BreakSeconds`, `FolderSelected`, `Config`. Draft: `SecondsValid`, `CountValid`, `CanStart`, `EstimateSeconds`. Running: `CurrentImage`, `CurrentImageId`, `Display`, `TimeRemaining`, `SecondsRemaining`, `IsExpired`, `PhaseDuration`, `RemainingPercent`, `OnBreak`, `IsPaused`, `PausedByUser`, `IsRunning`, `CompletedCount`, `SkippedCount`, `TargetCount`, `Remaining`, `CurrentPoseNumber`, `IsComplete`, `CouldNotDisplayImage`, `ImagesDisplayed`, `TotalDrawingTime`, `AveragePoseTime` |
+| **Queries** | Every phase: `Phase`, `SecondsPerImage`, `ImageCount`, `BreakSeconds`, `FolderSelected`, `Config`. Draft: `SecondsValid`, `CountValid`, `CanStart`, `EstimateSeconds`. Running: `CurrentImage`, `CurrentImageId`, `UpcomingImageId` (the peek, `INV-PLY-7`), `Display`, `TimeRemaining`, `SecondsRemaining`, `IsExpired`, `PhaseDuration`, `RemainingPercent`, `OnBreak`, `IsPaused`, `PausedByUser`, `IsRunning`, `CompletedCount`, `SkippedCount`, `TargetCount`, `Remaining`, `CurrentPoseNumber`, `IsComplete`, `CouldNotDisplayImage`, `ImagesDisplayed`, `TotalDrawingTime`, `AveragePoseTime` |
 | **Statics** | `Evaluate(...)` (the draft factory) and, on the non-generic partner type, `DrawingSession.Format(seconds)` |
 
 `Remaining` counts *images* left, `TimeRemaining` counts the current phase's *time* — two different
@@ -391,15 +405,27 @@ Reading a run query off a draft is legal and meaningless — the phase says whic
 - `INV-PLY-2` — **An unreadable image is skipped, not counted.** It travels the skip path, so it
   neither advances the completed count nor banks time — a broken file cannot consume a slot the
   user paid for.
-- `INV-PLY-3` — **Failure is bounded.** After a fixed number of consecutive failures (default 100)
-  the session ends and reports "could not display" rather than looping. Necessary because a pool
-  smaller than the target count repeats forever by design.
+- `INV-PLY-3` — **Failure is bounded.** After a number of consecutive failures the session ends and
+  reports "could not display" rather than looping. Necessary because a pool smaller than the target
+  count repeats forever by design. The bound is the caller's to state — the player passes twice the
+  pool, which cannot be reached while a drawable image remains even when a run of failures spans a
+  pass boundary — and defaults to 100 only for a caller that says nothing. With `INV-PLY-8` the
+  *loads* such a run costs are bounded by the pool rather than by the budget.
 - `INV-PLY-4` — **"Could not display" is distinguishable from normal completion**, so the screen
   can show an error instead of a summary.
 - `INV-PLY-5` — **The loader never throws through the session.** Decode failures are caught at the
   adapter and returned as null.
 - `INV-PLY-6` — **Resolution is synchronous and re-entrant-safe.** It runs to a decision — a
   displayable image, completion, or the failure budget — before returning.
+- `INV-PLY-7` — **The session may be asked what comes next.** `UpcomingImageId` reports the next id
+  in the current pass without consuming it: it never advances the sequence, starts a clock, or
+  counts anything. Refilling a drained pass is the one mutation it is allowed — a pass is
+  materialised whole, so the resulting sequence is identical either way. Stated as an exception
+  because `INV-SES-1` and `INV-X-12` otherwise forbid a query that mutates.
+- `INV-PLY-8` — **An unreadable image is not loaded twice in one session.** Once the loader has
+  reported an id unreadable, later passes skip it without a second load attempt. It still travels
+  the skip path and still counts against the budget (`INV-PLY-2`, `INV-PLY-3`) — only the load is
+  elided. Per session, never persisted: a file fixed between sessions must load again.
 
 **Rules — the totals**
 
@@ -659,11 +685,17 @@ Changed again by the repo-wide review of 2026-08-16:
 | `INV-GRP-6` | **Narrowed** | It said randomization never belongs to the library. `INV-POOL-6` is one random choice made there — of membership, never of order |
 | `INV-IMG-4` | **Corrected** | It claimed decoded images were bounded to `MaxImageDimension`. The sampler bounded the *short* side, so an aspect-extreme source was effectively unbounded; the long side is now held to within 2x the ceiling |
 
-Changed by FD-011:
+Changed by FD-011 and FD-010:
 
 | Rule | Change | Why |
 |---|---|---|
 | `INV-SES-13` | **Added** | `Tick()` returned a bool, so the screen reconstructed the transition from the state left behind (`if (!session.OnBreak) Chime();`) — a rule about what counts as a new pose, living where no unit test could reach it. `INV-SES-10` and `INV-CD-6` are what the `SessionTick` enum makes observable; neither changed in meaning |
+| `INV-PLY-7` | **Added** | The screen could not decode ahead without asking what came next, so a multi-megabyte decode ran inside the 200 ms repaint callback at every pose boundary |
+| `INV-PLY-8` | **Added** | A pool smaller than the configured count repeats by design, so an unreadable file was re-opened and re-decoded on every pass — up to the whole failure budget inside one tick |
+| `INV-PLY-3` | **Unchanged in meaning** | The budget is now an explicit value at the player's call site rather than the constructor's implicit default of 100, and is derived from the pool so it scales with the run |
+| `INV-POOL-6` | **Narrowed** | The bound was a flat 1000 sized only by the Binder buffer. It is now derived from the session's length as well, because the player is handed an array and cannot re-sample. The rule moved to `SessionSetup`, where a config-derived number belongs; the library still owns the sampling |
+| `INV-SES-1` | **Exception stated** | "Commands only" now carries one named carve-out: `UpcomingImageId` may refill a drained pass in order to answer (`INV-PLY-7`). It changes nothing else, and a pass is materialised whole, so the sequence is identical either way |
+| `INV-X-12` | **Exception stated** | Same carve-out from the other side: a query that mutates was forbidden outright, and is now forbidden except where the mutation is stated as part of the query's own rule |
 
 One behaviour did change, deliberately: when the consecutive-failure budget is exhausted the session
 now banks **no** partial time for the unreadable image it died on. The old `SessionPlayer` routed
@@ -680,7 +712,7 @@ against `INV-PLY-2`.
 Three consequences worth knowing before the next change:
 
 - **The draft is a session, so `Evaluate` is generic.** `MainActivity` calls
-  `DrawingSession<Bitmap>.Evaluate(...)` for a screen that never touches an image. That reads oddly
+  `DrawingSession<PoseImage>.Evaluate(...)` for a screen that never touches an image. That reads oddly
   and is the accepted price of deleting `SessionSetupState`; the alternative is that record under a
   new name.
 - **`INV-POOL-2` is now enforced, not just asserted.** The library de-duplicates ids as it walks, so

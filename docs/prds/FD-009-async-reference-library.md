@@ -21,7 +21,7 @@ folder edited in another app is picked up without re-picking it.
 | New Core type | no — the walk is already pure and already re-runnable via `Enumerate()`. What is missing is an Android-side caller, not a domain concept. Adding a "library loader" type would be a second name for `Enumerate` (DOMAIN-MODEL.md §9). |
 | New invariants | `INV-X-13` — **A library load is abandonable.** Only the most recent load may write the pool; a load whose folder has been superseded is discarded, including anything it decoded. Filed in the cross-cutting family, not `INV-GRP-*`: the rule is about the Android-side loader, and DOMAIN-MODEL.md §8 maps `INV-GRP-*` to `ReferenceLibrary` / `ReferenceLibraryTests`, which cannot reach it. |
 | Invariants changed | none. `INV-GRP-1` (membership is derived, never stored) is what this ticket finally exercises in production: today `Enumerate()` has no caller outside the constructor. |
-| Crosses a boundary | no new contract. The pool still crosses to the player under the bound `ReferenceLibrary.Sample` / `MainActivity.MaxPoolHandoff` already applies (`INV-POOL-6`). |
+| Crosses a boundary | no new contract. The pool still crosses to the player under the bound already applied by `ReferenceLibrary.Sample`, sized by `SessionSetup.HandoffBound(config.ImageCount, MainActivity.MaxPoolHandoff)` — the session's length, with the transport's limit as the ceiling (`INV-POOL-6`). |
 
 ## Approach
 
