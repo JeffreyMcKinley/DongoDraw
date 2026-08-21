@@ -1,4 +1,4 @@
-using FigureDrawing.Core;
+﻿using FigureDrawing.Core;
 
 namespace FigureDrawing.Tests;
 
@@ -80,7 +80,7 @@ public class DrawingSessionBreakTests
         var s = Make(clock, seconds: 30, count: 3);
 
         clock.Advance(30);
-        Assert.True(s.Tick());
+        Assert.Equal(SessionTick.PoseStarted, s.Tick());
 
         Assert.Equal(1, s.CompletedCount);
         Assert.Equal("b", s.CurrentImage);
@@ -98,7 +98,7 @@ public class DrawingSessionBreakTests
 
         clock.Advance(10);
 
-        Assert.False(s.Tick());
+        Assert.Equal(SessionTick.None, s.Tick());
         Assert.Equal("a", s.CurrentImage);
         Assert.Equal(0, s.CompletedCount);
         Assert.Equal("0:20", s.Display);
@@ -113,7 +113,7 @@ public class DrawingSessionBreakTests
         s.Pause();
         clock.Advance(120);
 
-        Assert.False(s.Tick());
+        Assert.Equal(SessionTick.None, s.Tick());
         Assert.Equal(0, s.CompletedCount);
         Assert.Equal("0:30", s.Display);
     }
@@ -161,7 +161,7 @@ public class DrawingSessionBreakTests
         clock.Advance(30);
         s.Tick();                  // into the break
         clock.Advance(15);
-        Assert.True(s.Tick());     // out of it
+        Assert.Equal(SessionTick.PoseStarted, s.Tick());     // out of it
 
         Assert.Equal(SessionPhase.Pose, s.Phase);
         Assert.False(s.OnBreak);
@@ -191,7 +191,7 @@ public class DrawingSessionBreakTests
         Assert.Equal("0:10", s.Display);          // the rest picks up where it left off
 
         clock.Advance(10);
-        Assert.True(s.Tick());                    // break over -> pose 2
+        Assert.Equal(SessionTick.PoseStarted, s.Tick());                    // break over -> pose 2
 
         Assert.Equal(SessionPhase.Pose, s.Phase);
         Assert.Equal("0:30", s.Display);
@@ -352,7 +352,7 @@ public class DrawingSessionBreakTests
         s.End();
         s.Resume();
 
-        Assert.False(s.Tick());
+        Assert.Equal(SessionTick.None, s.Tick());
         Assert.Equal((displayed, drawn, skipped), (s.ImagesDisplayed, s.TotalDrawingTime, s.SkippedCount));
         Assert.True(s.IsComplete);
     }
@@ -416,5 +416,50 @@ public class DrawingSessionBreakTests
         Assert.True(s.IsComplete);
         Assert.True(s.CouldNotDisplayImage);
         Assert.Null(s.CurrentImage);
+    }
+
+    // --- What a tick reports (INV-SES-13) ------------------------------------
+
+    // The screen plays the change-of-pose tone on what Tick reports, so "a rest started" and "a new
+    // pose started" have to be different answers. Reconstructing them from the state afterwards is
+    // what put this rule in an Activity in the first place.
+    [Fact]
+    public void PoseExpiry_WithABreakConfigured_ReportsTheBreakStarting()
+    {
+        var clock = new FakeClock();
+        var s = Make(clock, seconds: 30, count: 3, breakSeconds: 15);
+
+        clock.Advance(30);
+
+        Assert.Equal(SessionTick.BreakStarted, s.Tick());
+    }
+
+    [Fact]
+    public void BreakExpiry_ReportsThePoseStarting()
+    {
+        var clock = new FakeClock();
+        var s = Make(clock, seconds: 30, count: 3, breakSeconds: 15);
+
+        clock.Advance(30);
+        s.Tick();                  // into the rest
+        clock.Advance(15);
+
+        Assert.Equal(SessionTick.PoseStarted, s.Tick());
+    }
+
+    // A session ends on a pose, never on a rest (INV-SES-10), so the last tick reports completion
+    // whether or not a break is configured — and never a pose, which would chime for an image
+    // nobody is going to draw.
+    [Theory]
+    [InlineData(0)]
+    [InlineData(15)]
+    public void TheTickThatReachesTheCount_ReportsCompletion(int breakSeconds)
+    {
+        var clock = new FakeClock();
+        var s = Make(clock, seconds: 30, count: 1, breakSeconds: breakSeconds);
+
+        clock.Advance(30);
+
+        Assert.Equal(SessionTick.Completed, s.Tick());
     }
 }

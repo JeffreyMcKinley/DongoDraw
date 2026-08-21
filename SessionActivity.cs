@@ -406,19 +406,23 @@ namespace FigureDrawing
             if (!ticking || IsFinishing || IsDestroyed)
                 return;
 
-            if (session.Tick())
+            // What changed is the session's answer, not this screen's to work out: a rest starting is
+            // not a new pose, and the tick that ends the run is not one either.
+            switch (session.Tick())
             {
-                // The phase changed: a new pose, a break, or the end of the session. Only a pose
-                // change chimes — a rest starting is not a new pose (the image under the overlay is
-                // the next pose's), and Chime() already ignores completion.
-                if (!session.OnBreak)
+                case SessionTick.PoseStarted:
                     Chime();
+                    Render();
+                    break;
 
-                Render();
-            }
-            else
-            {
-                RenderClock();
+                case SessionTick.BreakStarted:
+                case SessionTick.Completed:
+                    Render();
+                    break;
+
+                default:
+                    RenderClock();
+                    break;
             }
 
             if (ticking)
@@ -442,14 +446,9 @@ namespace FigureDrawing
         }
 
         // A short tone when the pose changes on its own. Only the automatic change chimes: a drawer
-        // who tapped Next or Skip is already looking at the screen.
-        void Chime()
-        {
-            if (session.IsComplete)
-                return;
-
-            tone?.StartTone(Tone.PropBeep, 120);
-        }
+        // who tapped Next or Skip is already looking at the screen. Reached only from the
+        // PoseStarted arm, so completion no longer needs guarding here.
+        void Chime() => tone?.StartTone(Tone.PropBeep, 120);
 
         // --- Rendering -------------------------------------------------------
 

@@ -32,6 +32,28 @@ public enum PauseReason
     User
 }
 
+// What one call to Tick() did. The screen used to reconstruct this from the state left behind
+// (`if (!session.OnBreak) Chime();`), which put a rule — what counts as a new pose — in an Activity
+// where no unit test could reach it (INV-SES-13). A return value rather than a concept with a
+// lifetime, so it is not a tenth domain object (docs/DOMAIN-MODEL.md §9).
+public enum SessionTick
+{
+    // Nothing expired: a draft, a complete or a paused session, or a phase with time still on its
+    // clock. First so `default(SessionTick)` is "nothing happened".
+    None,
+
+    // A reference image is now on screen with a full clock — either a pose expired straight into the
+    // next one, or a rest ended.
+    PoseStarted,
+
+    // A pose expired into the configured rest. The next pose's image is already loaded underneath.
+    BreakStarted,
+
+    // The tick that ended the session: the configured count was reached, or the failure budget ran
+    // out. Never reported alongside a new pose.
+    Completed
+}
+
 // Non-generic partner of DrawingSession<TImage> (same name, different arity) for the one thing
 // callers need without an image type: formatting a duration the way the timer reads it.
 public static class DrawingSession
@@ -352,21 +374,30 @@ public sealed class DrawingSession<TImage> where TImage : class
 
     // Repaint-loop hook: hand the clock a chance to expire the current phase. Safe to call at any
     // cadence — time comes from a monotonic clock, so a slow or dropped tick cannot change how much
-    // time a pose gets. Returns true when the phase changed, which is the screen's cue to repaint
-    // the image rather than just the timer.
-    public bool Tick()
+    // time a pose gets. Reports which transition it made, so the screen never has to infer one from
+    // the state left behind (INV-SES-13).
+    public SessionTick Tick()
     {
         if (Phase is SessionPhase.Draft or SessionPhase.Complete || IsPaused || !IsExpired)
-            return false;
+            return SessionTick.None;
 
         if (Phase == SessionPhase.Break)
         {
             StartPose();
-            return true;
+            return SessionTick.PoseStarted;
         }
 
         CompletePose();
-        return true;
+
+        // CompletePose lands in exactly one of three places: the target was reached (or the failure
+        // budget ran out inside Resolve), a rest is configured, or the next pose is already up. The
+        // phase it left behind is which, so this reads the branch rather than repeating it.
+        return Phase switch
+        {
+            SessionPhase.Complete => SessionTick.Completed,
+            SessionPhase.Break => SessionTick.BreakStarted,
+            _ => SessionTick.PoseStarted,
+        };
     }
 
     // Timer expiry or a manual "done" tap: count this pose, bank its drawing time, and move on

@@ -477,6 +477,7 @@ repository, and adding one would be the signal that the model changed, not a con
 | `SessionConfig` | Value object (`readonly record struct`) | Immutable, validated upstream |
 | `SessionPhase` | Enum | `Draft` → `Pose` ⇄ `Break` → `Complete` |
 | `PauseReason` | Enum | Why the clocks stopped: `Lifecycle` (screen hidden) vs `User` (the drawer asked). `INV-CD-8` |
+| `SessionTick` | Enum | What a tick did: `None`, `PoseStarted`, `BreakStarted`, `Completed`. A return value, not a concept with a lifetime. `INV-SES-13` |
 | `ViewerTools` | Entity | Owns the viewing aids and the zoom range; touches nothing the session counts |
 | image id (`string`) | Primitive standing in for a value object | See "candidate: `ImageRef`" below |
 
@@ -487,6 +488,7 @@ test in the `DrawingSession*Tests` files, which are split by invariant family (�
 |---|---|
 | `Remaining` is never negative; `CompletedCount` never exceeds `TargetCount` | `Next` finishes at the target; `Remaining` clamps |
 | Every image is shown once before any repeat | `Refill` rebuilds a full pass before dequeuing |
+| A tick reports the transition it made | `Tick` returns `SessionTick`, read off the phase it left behind |
 | Skip never advances `CompletedCount` and never banks time | `SkipCurrent` advances the sequence; time is banked only in `CountCurrent` and `End` |
 | `End` banks the current partial time but does not count the pose | `End` accumulates, then `Finish` |
 | Drawing time excludes all skipped time | Time is banked only in `Next` and `End` |

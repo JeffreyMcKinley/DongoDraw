@@ -314,7 +314,7 @@ fields the session already holds, are not independent concepts. They were six ty
 | **Lifetime** | A draft is evaluated on the setup screen; constructing one with a pool copies it and positions the session on its first displayable image; it ends at completion or `End()`. Never restarted — construct a new one |
 | **Phases** | `Draft` → `Pose` ⇄ `Break` → `Complete` |
 | **State** | Parsed setup inputs; the upcoming queue for the current pass; current image id and its loaded image; completed and skipped counts; accumulated drawing time; time left on the current phase; run/pause state |
-| **Commands** | `Next()`, `Skip()`, `End()`, `Tick()`, `Pause(PauseReason = Lifecycle)`, `Resume()` |
+| **Commands** | `Next()`, `Skip()`, `End()`, `Tick() -> SessionTick`, `Pause(PauseReason = Lifecycle)`, `Resume()` |
 | **Queries** | Every phase: `Phase`, `SecondsPerImage`, `ImageCount`, `BreakSeconds`, `FolderSelected`, `Config`. Draft: `SecondsValid`, `CountValid`, `CanStart`, `EstimateSeconds`. Running: `CurrentImage`, `CurrentImageId`, `Display`, `TimeRemaining`, `SecondsRemaining`, `IsExpired`, `PhaseDuration`, `RemainingPercent`, `OnBreak`, `IsPaused`, `PausedByUser`, `IsRunning`, `CompletedCount`, `SkippedCount`, `TargetCount`, `Remaining`, `CurrentPoseNumber`, `IsComplete`, `CouldNotDisplayImage`, `ImagesDisplayed`, `TotalDrawingTime`, `AveragePoseTime` |
 | **Statics** | `Evaluate(...)` (the draft factory) and, on the non-generic partner type, `DrawingSession.Format(seconds)` |
 
@@ -356,6 +356,10 @@ Reading a run query off a draft is legal and meaningless — the phase says whic
   rejecting an image, not asking for a rest.
 - `INV-SES-12` — **Drawing time excludes break, background, and paused time.** The session clock
   stops for the whole break and for the whole pause.
+- `INV-SES-13` — **A tick reports the transition it made.** `Tick()` returns exactly one of:
+  nothing happened, a pose started, a rest started, the session completed. A caller never has to
+  infer the transition from the state afterwards — which is what kept "what counts as a new pose"
+  in an Activity, out of reach of every test.
 
 **Rules — the pose clock**
 
@@ -589,7 +593,7 @@ invariant families has one test file per family rather than one per type.
 | `INV-IMG-*`, `INV-GRP-*`, `INV-POOL-*`, `INV-TREE-*` | `ReferenceLibrary` + the SAF adapter | `ReferenceLibraryTests` with an in-memory tree |
 | `INV-SET-1..5`, `INV-CFG-*` | `SessionSetup`, `DrawingSession<TImage>.Evaluate` | `SessionSetupTests`, `DrawingSessionSetupTests` |
 | `INV-SES-1..9`, `INV-SUM-*` | `DrawingSession<TImage>` | `DrawingSessionTests` |
-| `INV-SES-10..12`, `INV-POSE-*` | `DrawingSession<TImage>` | `DrawingSessionBreakTests`, `DrawingSessionTimeAccountingTests` |
+| `INV-SES-10..13`, `INV-POSE-*` | `DrawingSession<TImage>` | `DrawingSessionBreakTests`, `DrawingSessionTimeAccountingTests` |
 | `INV-CD-*` | `DrawingSession<TImage>` | `DrawingSessionCountdownTests` |
 | `INV-PLY-*` | `DrawingSession<TImage>` | `DrawingSessionImageTests` with a fake loader |
 | `INV-VIEW-*` | `ViewerTools` | `ViewerToolsTests` |
@@ -654,6 +658,12 @@ Changed again by the repo-wide review of 2026-08-16:
 | `INV-POOL-6` | **Added** | The whole pool crossed to the player as an intent extra, throwing `TransactionTooLargeException` on a DCIM-sized folder — uncaught, and reproducing on every launch because the folder is persisted |
 | `INV-GRP-6` | **Narrowed** | It said randomization never belongs to the library. `INV-POOL-6` is one random choice made there — of membership, never of order |
 | `INV-IMG-4` | **Corrected** | It claimed decoded images were bounded to `MaxImageDimension`. The sampler bounded the *short* side, so an aspect-extreme source was effectively unbounded; the long side is now held to within 2x the ceiling |
+
+Changed by FD-011:
+
+| Rule | Change | Why |
+|---|---|---|
+| `INV-SES-13` | **Added** | `Tick()` returned a bool, so the screen reconstructed the transition from the state left behind (`if (!session.OnBreak) Chime();`) — a rule about what counts as a new pose, living where no unit test could reach it. `INV-SES-10` and `INV-CD-6` are what the `SessionTick` enum makes observable; neither changed in meaning |
 
 One behaviour did change, deliberately: when the consecutive-failure budget is exhausted the session
 now banks **no** partial time for the unreadable image it died on. The old `SessionPlayer` routed

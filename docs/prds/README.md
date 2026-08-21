@@ -14,13 +14,11 @@ renumber an id.
 |----|-------|---------|
 | [FD-009](FD-009-async-reference-library.md) | Reference library loads without freezing the screen | Reference Library |
 | [FD-010](FD-010-pose-decode-off-the-tick.md) | A pose boundary never blocks the repaint loop | Session Execution |
-| [FD-011](FD-011-tick-reports-what-changed.md) | The session says what changed, not just that something did | Session Execution |
 
-All three come out of the repo-wide review of 2026-08-16. FD-009 and FD-010 are threading work in
-the Android layer; FD-009 is the prerequisite in practice, since it establishes how this app does
-background work and cancellation, and FD-010 follows the same shape on the player screen. FD-011 is
-small and independent — a rule currently living in an Activity moving into Core — but it touches the
-same `Tick` call site as FD-010, so do it first if both are in flight.
+Both come out of the repo-wide review of 2026-08-16, along with FD-011, which has shipped. They are
+threading work in the Android layer; FD-009 is the prerequisite in practice, since it establishes how
+this app does background work and cancellation, and FD-010 follows the same shape on the player
+screen. FD-011 went first because it touches the same `Tick` call site as FD-010.
 
 ## Shipped
 
@@ -29,6 +27,10 @@ FD-005 (countdown), FD-006 (skip), FD-007 (end + summary), FD-008 (foldable layo
 criteria are the invariant tables in [DOMAIN-MODEL.md](../DOMAIN-MODEL.md) and the suites named in
 [ARCHITECTURE.md §11](../ARCHITECTURE.md#11-testing-strategy). The original ticket stubs were an
 early experiment and were never committed.
+
+[FD-011](FD-011-tick-reports-what-changed.md) (the session says what changed) shipped ahead of
+FD-010, which touches the same `Tick` call site. Its criterion is `INV-SES-13` in
+[DOMAIN-MODEL.md](../DOMAIN-MODEL.md).
 
 [FD-012](FD-012-remembered-folder.md) (the app remembers the folder you picked) shipped after the
 MVP set: the library the artist last opened is restored on launch, survives a process kill, and is

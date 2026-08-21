@@ -63,7 +63,8 @@ public class SessionE2ETests
         public List<string> DisplayedImages { get; } = [];
 
         // One pass of the Handler loop: repaint, then let the session expire the phase if its time
-        // ran out. The screen decides nothing — Tick returns true when the image changed.
+        // ran out. The screen decides nothing — the session says which transition it made, and the
+        // tone follows that rather than being reconstructed from the state afterwards (INV-SES-13).
         public void Tick()
         {
             if (!Ticking)
@@ -71,21 +72,18 @@ public class SessionE2ETests
 
             DisplayedTimes.Add(Session.Display);
 
-            if (Session.Tick())
+            switch (Session.Tick())
             {
-                if (!Session.OnBreak)
-                    Chime();
+                case SessionTick.PoseStarted:
+                    Chimes++;
+                    Render();
+                    break;
 
-                Render();
+                case SessionTick.BreakStarted:
+                case SessionTick.Completed:
+                    Render();
+                    break;
             }
-        }
-
-        void Chime()
-        {
-            if (Session.IsComplete)
-                return;
-
-            Chimes++;
         }
 
         // A manual "done" tap: count the pose. The session hands the next one a full clock itself.
