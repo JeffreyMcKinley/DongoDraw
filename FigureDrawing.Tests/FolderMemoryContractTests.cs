@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.RegularExpressions;
 
 namespace FigureDrawing.Tests;
@@ -17,141 +16,13 @@ namespace FigureDrawing.Tests;
 // or a reformat must not fail a build that still behaves.
 public class FolderMemoryContractTests
 {
-    static readonly string Source = File.ReadAllText(TestPaths.Path("MainActivity.cs"));
+    // MainActivity as text, comments and literals blanked. The machinery lives in SourceShape,
+    // which FD-009 shared out so LibraryLoadContractTests can read LibraryLoader.cs the same way.
+    static readonly SourceShape Activity = new("MainActivity.cs");
 
-    // MainActivity with every comment, string and char literal blanked out, positions preserved.
-    static readonly string Code = StripCommentsAndLiterals(Source);
-
-    // Replaces the contents of comments and literals with spaces, keeping the length and the line
-    // breaks so offsets still line up with the original file. Blanking rather than deleting also
-    // keeps a brace inside a string or an interpolation hole out of the brace matcher below.
-    static string StripCommentsAndLiterals(string source)
-    {
-        var output = new StringBuilder(source.Length);
-        var i = 0;
-
-        void Blank(char c) => output.Append(c == '\n' ? '\n' : ' ');
-
-        while (i < source.Length)
-        {
-            var c = source[i];
-            var next = i + 1 < source.Length ? source[i + 1] : '\0';
-
-            if (c == '/' && next == '/')
-            {
-                while (i < source.Length && source[i] != '\n')
-                    Blank(source[i++]);
-                continue;
-            }
-
-            if (c == '/' && next == '*')
-            {
-                Blank(source[i++]);
-                while (i < source.Length && !(source[i] == '*' && i + 1 < source.Length && source[i + 1] == '/'))
-                    Blank(source[i++]);
-
-                for (var end = 0; end < 2 && i < source.Length; end++)
-                    Blank(source[i++]);
-
-                continue;
-            }
-
-            if (c is '"' or '\'')
-            {
-                // A verbatim string ends on a quote that is not doubled; every other literal ends on
-                // the first unescaped closing quote.
-                var verbatim = c == '"' && output.Length > 0 && Verbatim(output);
-                var quote = c;
-
-                Blank(source[i++]);
-
-                while (i < source.Length)
-                {
-                    if (verbatim)
-                    {
-                        if (source[i] == quote && i + 1 < source.Length && source[i + 1] == quote)
-                        {
-                            Blank(source[i++]);
-                            Blank(source[i++]);
-                            continue;
-                        }
-
-                        if (source[i] == quote)
-                            break;
-                    }
-                    else
-                    {
-                        if (source[i] == '\\' && i + 1 < source.Length)
-                        {
-                            Blank(source[i++]);
-                            Blank(source[i++]);
-                            continue;
-                        }
-
-                        if (source[i] == quote || source[i] == '\n')
-                            break;
-                    }
-
-                    Blank(source[i++]);
-                }
-
-                if (i < source.Length)
-                    Blank(source[i++]);
-
-                continue;
-            }
-
-            output.Append(c);
-            i++;
-        }
-
-        return output.ToString();
-    }
-
-    // Whether the quote just consumed was preceded by @ (possibly after $), i.e. opens a verbatim
-    // string. The prefix is still in the output because it is ordinary code.
-    static bool Verbatim(StringBuilder emitted)
-    {
-        for (var i = emitted.Length - 1; i >= 0 && emitted.Length - i <= 2; i--)
-        {
-            if (emitted[i] == '@')
-                return true;
-
-            if (emitted[i] != '$')
-                return false;
-        }
-
-        return false;
-    }
-
-    // The body of a method declared in MainActivity, brace-matched from its declaration. The
-    // declaration is located by name at the start of a line and must be followed by nothing but
-    // whitespace and its opening brace, so a mention of the method elsewhere — including a call —
-    // cannot retarget the search.
-    static string MethodBody(string methodName)
-    {
-        var declaration = Regex.Match(
-            Code,
-            $@"(?m)^[ \t]*(?:[\w.<>?\[\],]+[ \t]+)+{Regex.Escape(methodName)}[ \t]*\([^)\n]*\)[ \t]*$");
-
-        Assert.True(declaration.Success, $"MainActivity no longer declares a method named '{methodName}'.");
-
-        var open = Code.IndexOf('{', declaration.Index + declaration.Length);
-        Assert.True(open >= 0, $"No body found for '{methodName}'.");
-        Assert.True(
-            Code[(declaration.Index + declaration.Length)..open].Trim().Length == 0,
-            $"'{methodName}' is not followed by a block body; this test cannot read it.");
-
-        var depth = 0;
-        for (var i = open; i < Code.Length; i++)
-        {
-            if (Code[i] == '{') depth++;
-            else if (Code[i] == '}' && --depth == 0)
-                return Code[open..(i + 1)];
-        }
-
-        throw new InvalidOperationException($"Unbalanced braces after '{methodName}'.");
-    }
+    static string Source => Activity.Source;
+    static string Code => Activity.Code;
+    static string MethodBody(string methodName) => Activity.MethodBody(methodName);
 
     // The stripper is what makes every assertion below mean something, so it is checked rather than
     // trusted: MainActivity's own comments name most of the APIs asserted for.
@@ -228,11 +99,22 @@ public class FolderMemoryContractTests
         Assert.Contains("LibraryReference.TryParse", body, StringComparison.Ordinal);
         Assert.Contains("LibraryReference.HasReadGrant", body, StringComparison.Ordinal);
         Assert.Contains("PersistedUriPermissions", MethodBody("PersistedGrants"), StringComparison.Ordinal);
+
+        // Enumerating the platform's grants is a binder call, and since FD-009 this runs on every
+        // return to the screen rather than once per launch — so an escape here would be a crash on
+        // every foreground, off a reference that is persisted (INV-X-11, INV-GRP-5).
+        var caught = body.IndexOf("catch (Exception", StringComparison.Ordinal);
+        Assert.True(caught >= 0, "Checking the remembered grant no longer survives a platform failure.");
+        Assert.Contains("return null;", body[caught..], StringComparison.Ordinal);
     }
 
     // A remembered folder whose grant has since been revoked (permission cleared, volume unmounted,
     // provider uninstalled) must leave the empty state showing, not throw on every launch from then
     // on — the stale uri is persisted, so an escape here reproduces forever (INV-GRP-5).
+    //
+    // Since FD-009 this catch covers only LoadFolder's synchronous prologue: the walk itself fails
+    // on the looper, inside LoadFolderAsync. The asynchronous half of this invariant is pinned by
+    // LibraryLoadContractTests.TheLoadsTail_CatchesItsOwnFailures.
     [Fact]
     public void Restoring_ChecksTheGrantAndSurvivesAFailure()
     {

@@ -41,7 +41,7 @@ root `node_modules` — Nx is vendored under `.nx/installation/` and driven by a
 # Architecture
 
 Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) before changing code. It defines the Core/Android
-split, the rules for crossing that boundary, threading and lifecycle requirements, the three-tier
+split, the rules for crossing that boundary, threading and lifecycle requirements, the four-tier
 testing strategy, and the anti-patterns that count as violations.
 
 Short version: all logic that can be written without Android goes in `FigureDrawing.Core` and is
@@ -69,7 +69,7 @@ no `gh` CLI here. See [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker
 
 ### Triage labels
 
-The five canonical roles, unrenamed, carried on a `Status:` line in each ticket. See
+The five canonical roles plus a local `shipped`, carried on a `Status:` line in each ticket. See
 [`docs/agents/triage-labels.md`](docs/agents/triage-labels.md).
 
 ### Domain docs

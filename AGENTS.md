@@ -42,7 +42,7 @@ root `node_modules` — Nx is vendored under `.nx/installation/` and driven by a
 # Architecture
 
 Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) before changing code. It defines the Core/Android
-split, the rules for crossing that boundary, threading and lifecycle requirements, the three-tier
+split, the rules for crossing that boundary, threading and lifecycle requirements, the four-tier
 testing strategy, and the anti-patterns that count as violations.
 
 Short version: all logic that can be written without Android goes in `FigureDrawing.Core` and is

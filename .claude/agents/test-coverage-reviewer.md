@@ -20,7 +20,7 @@ Run tests through `nx` (`./nx.bat run <project>:test`), never the underlying too
 
 **The project's testing strategy — judge coverage against this, not against a line percentage**
 
-Read `docs/ARCHITECTURE.md` §11 (three tiers) and `docs/DOMAIN-MODEL.md` §8 (invariant-to-test map)
+Read `docs/ARCHITECTURE.md` §11 (four tiers) and `docs/DOMAIN-MODEL.md` §8 (invariant-to-test map)
 before reporting gaps, and cite the tier or invariant id. The model is Domain-Driven, so *what is
 worth testing* follows from the domain: an aggregate's invariants, a value object's construction
 rules, a domain service's classification rules. Coverage of getters and wiring is not the goal.
@@ -31,8 +31,11 @@ Four tiers, cheapest first — a finding must name which tier the missing test b
    type that owns several, as the session aggregate does) — the default. Every rule in Core
    lives here, made deterministic by the injected clock, `Random`, and loader.
 2. **Contract tests** (`UiResourceContractTests`, `SessionScreenContractTests`,
-   `TypefaceContractTests`, `FolderMemoryContractTests`, `AndroidBuildTests`) — parse source and
-   XML as files, no device. They catch the runtime-only failures the compiler misses: a view id
+   `TypefaceContractTests`, `FolderMemoryContractTests`, `LibraryLoadContractTests`,
+   `AndroidBuildTests`) — parse source and XML as files, no device. The reading machinery is shared
+   in `SourceShape` (itself covered by `SourceShapeTests`). This tier pins *where* a decision is
+   made; it cannot execute anything, so a rule that could be inverted and still read the same
+   belongs in a unit test instead. They catch the runtime-only failures the compiler misses: a view id
    referenced in code but absent from the layout, a missing string, a build property regression.
    They strip comments and literals before asserting, and pin which API a method reaches rather
    than how a statement is spelled.

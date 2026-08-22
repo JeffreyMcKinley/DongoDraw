@@ -7,7 +7,7 @@ codebase. This is a **single-context** repo — one glossary, one object model, 
 
 - **[`docs/ARCHITECTURE.md`](../ARCHITECTURE.md)** — the standing brief. §15 is the ubiquitous
   language (the glossary); §16 lists the bounded contexts. It also fixes the Core/Android split, the
-  rules for crossing that boundary, threading and lifecycle requirements, the three-tier testing
+  rules for crossing that boundary, threading and lifecycle requirements, the four-tier testing
   strategy, and the anti-patterns that count as violations.
 - **[`docs/DOMAIN-MODEL.md`](../DOMAIN-MODEL.md)** — one card per object: what identifies it, how
   long it lives, what it guarantees, what it may do, what it must never do. Rules are numbered

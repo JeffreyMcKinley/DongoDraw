@@ -116,7 +116,7 @@ has no state to keep between them.
 | **Kind** | Aggregate root over its images |
 | **Lifetime** | Persisted by reference (`Settings.LastCollection`), never by contents |
 | **State** | Root document id, display name, and the enumerated image ids in encounter order |
-| **Operations** | `Enumerate()` (re-walk the tree), `Pool` (the ordered ids), `Sample(maxIds[, maxTotalIdLength], random)` (the bounded handoff, `INV-POOL-6`), `Count` / `IsEmpty`, `RootDocumentId` / `DisplayName`, the static `Empty` (no folder picked yet — every screen's starting state) and the static classifiers `IsImage` / `IsDirectory` |
+| **Operations** | the constructor (which *is* the walk — re-deriving membership means a new instance, never a second walk on a live one, `INV-X-13`), `Pool` (the ordered ids), `Sample(maxIds[, maxTotalIdLength], random)` (the bounded handoff, `INV-POOL-6`), `Count` / `IsEmpty`, `RootDocumentId` / `DisplayName`, the static `Empty` (no folder picked yet — every screen's starting state) and the static classifiers `IsImage` / `IsDirectory` |
 
 **Mapping ids at the edge.** The constructor takes an optional `toImageId` so the adapter can turn
 each document id into the durable content URI a session draws from — the Android layer passes
@@ -131,7 +131,7 @@ and the empty state shows (`INV-GRP-4`, `INV-GRP-5`).
 
 - `INV-GRP-1` — **Membership is derived, never stored.** The images are whatever the document tree
   reports *now*. The app never persists a list of image ids — a persisted list would silently rot
-  as the user edits the folder. Re-enumerate on load.
+  as the user edits the folder. Re-walk on load, by building a fresh library.
 - `INV-GRP-2` — **The library is flat.** Subfolders are traversed depth-first and their images
   merge into one pool in encounter order. Nesting is a storage detail, not a domain hierarchy. If
   per-subfolder grouping is ever wanted, that is *several* libraries, decided at pick time.
@@ -154,8 +154,8 @@ and the empty state shows (`INV-GRP-4`, `INV-GRP-5`).
   comes from passes (`INV-SES-4`), never from a pool that lists an image twice.
 - `INV-POOL-3` — **May be smaller than the session's target count.** That is normal and is exactly
   what passes exist to handle.
-- `INV-POOL-4` — **Copied, not aliased.** A session copies the pool at construction; a later
-  re-enumeration cannot change a running session.
+- `INV-POOL-4` — **Copied, not aliased.** A session copies the pool at construction, so a later
+  re-walk cannot change a running session.
 - `INV-POOL-5` — **A pool with zero images cannot start a session.** Enforced upstream by the Start
   gate (`INV-SET-3`) and defensively downstream (`INV-SES-7`).
 - `INV-POOL-6` — **A handoff may be bounded, and says so.** When the pool cannot cross a boundary
@@ -191,7 +191,9 @@ the aggregate it protects is not an ACL.
 - `INV-TREE-1` — **The port is the only door.** `DocumentsContract`, `ContentResolver`, `Cursor`,
   and `Uri` stop at the adapter. Nothing SAF-shaped crosses into the domain.
 - `INV-TREE-2` — **`GetChildren` returns direct children only.** Recursion is the library's job,
-  not the adapter's, so the adapter stays trivial enough to leave untested.
+  not the adapter's, so the adapter carries no domain logic — only the query and, since FD-009, the
+  abandonment check that stops it answering once its load is superseded (`INV-X-13`, pinned by
+  `LibraryLoadContractTests`).
 - `INV-TREE-3` — **A `DocumentEntry` is `(DocumentId, MimeType?)` and nothing more.** A null or
   unknown MIME type is legal and simply is not an image.
 - `INV-TREE-4` — **The adapter never throws through the port.** A failed query yields nothing.
@@ -511,6 +513,17 @@ These bind the objects together and are the ones most easily broken by a plausib
   showing; one too broken to point the picker at leaves the picker opening where it would have
   anyway. Neither costs the artist the screen they asked for.
 
+**Background work**
+
+- `INV-X-13` — **A library load is abandonable.** Only the most recent load may write the pool; a
+  load that has been superseded *or abandoned* — the screen stopped, was destroyed, or reset — is
+  discarded, including anything it decoded and including its failures. Filed in the cross-cutting
+  family rather than `INV-GRP-*`: the rule is about the Android-side loader, and §8 maps
+  `INV-GRP-*` to `ReferenceLibrary` / `ReferenceLibraryTests`, which cannot reach it. The walk an
+  abandoned load leaves behind is a *partial* pool: legal because membership is only ever whatever
+  the tree reports now (`INV-GRP-1`) and a query that yields nothing is the answer the adapter
+  already gives a revoked grant (`INV-TREE-4`) — and safe only because it is discarded, never shown.
+
 **Consolidation**
 
 - `INV-X-12` — Merging objects never merges responsibilities. A rule that was enforced in one place
@@ -528,7 +541,7 @@ invariant families has one test file per family rather than one per type.
 
 | Invariant family | Enforced in | Tested by |
 |---|---|---|
-| `INV-IMG-*`, `INV-GRP-*`, `INV-POOL-*`, `INV-TREE-*` | `ReferenceLibrary` + the SAF adapter | `ReferenceLibraryTests` with an in-memory tree |
+| `INV-IMG-*`, `INV-GRP-*`, `INV-POOL-*`, `INV-TREE-*` | `ReferenceLibrary` + the SAF adapter | `ReferenceLibraryTests` with an in-memory tree. `INV-GRP-1`'s re-derivation is *triggered* by `MainActivity.OnStart`, covered on a device by `FolderPickerUiTests.ReturningFromASession_RebuildsTheGridAndPicksUpNewImages` |
 | `INV-SET-1..5`, `INV-CFG-*` | `SessionSetup`, `DrawingSession<TImage>.Evaluate` | `SessionSetupTests`, `DrawingSessionSetupTests` |
 | `INV-SES-1..9`, `INV-SUM-*` | `DrawingSession<TImage>` | `DrawingSessionTests` |
 | `INV-SES-10..12`, `INV-POSE-*` | `DrawingSession<TImage>` | `DrawingSessionBreakTests`, `DrawingSessionTimeAccountingTests` |
@@ -538,7 +551,8 @@ invariant families has one test file per family rather than one per type.
 | `INV-SET-P*`, `INV-STO-*` | `Settings` | `SettingsTests` |
 | `INV-SET-P5`, `INV-GRP-5` (the remembered folder) | `LibraryReference` + `MainActivity`'s wiring | `LibraryReferenceTests`, `FolderMemoryContractTests`, `FolderPickerUiTests` |
 | Cross-context flows | The objects together | `SessionE2ETests` |
-| `INV-X-*` | Structural | Project references, `AndroidBuildTests`, `SessionScreenContractTests`, `FolderMemoryContractTests`, code review |
+| `INV-X-13` (an abandonable load) | `LoadGeneration` and `LibraryLoadState` (the "never a mixture" clause), called by `LibraryLoader` and `MainActivity` | `LoadGenerationTests` and `LibraryLoadStateTests` for the rules themselves; `LibraryLoadContractTests` for where they are called — not observable through Appium, see FD-009 |
+| `INV-X-*` (the rest) | Structural | Project references, `AndroidBuildTests`, `SessionScreenContractTests`, `FolderMemoryContractTests`, code review |
 
 Adding an invariant means adding a named test. Removing one means saying so in a ticket — an
 invariant deleted quietly is how a domain model stops describing the code.
@@ -547,7 +561,7 @@ invariant deleted quietly is how a domain model stops describing the code.
 
 ## 9. Consolidation
 
-The catalogue was fifteen objects for an app of roughly 1,200 lines. Four merges took it to nine.
+The catalogue was fifteen objects for an app of roughly 2,000 lines. Four merges took it to nine.
 This section is the map from the old names to the new, and the state of the code against it.
 
 | Merged object | Absorbed | Why they are one concept |

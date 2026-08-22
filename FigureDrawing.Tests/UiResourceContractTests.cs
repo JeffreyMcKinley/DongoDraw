@@ -97,12 +97,16 @@ public class UiResourceContractTests
     public void Strings_DeclaresSessionSetupStrings(string name) =>
         Assert.Contains(name, StringResourceNames());
 
-    // FD-001 explicit string contract: picker label + both empty-state messages.
+    // FD-001 explicit string contract: picker label + both empty-state messages. Plus FD-009's
+    // loading caption, which empty_label carries while the walk and the preview decodes run off the
+    // UI thread — the reason a folder being read is never captioned as one with nothing in it.
     [Theory]
     [InlineData("app_name")]
     [InlineData("pick_button_text")]
     [InlineData("empty_label_text")]
     [InlineData("empty_folder_text")]
+    [InlineData("library_loading_text")]
+    [InlineData("picker_error_text")]
     public void Strings_DeclaresFdStrings(string name) =>
         Assert.Contains(name, StringResourceNames());
 
