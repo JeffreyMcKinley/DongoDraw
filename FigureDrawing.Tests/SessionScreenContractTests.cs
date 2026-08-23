@@ -12,11 +12,17 @@ public class SessionScreenContractTests
 {
     static readonly XNamespace Android = "http://schemas.android.com/apk/res/android";
 
-    static string SessionActivitySource => File.ReadAllText(TestPaths.Path("SessionActivity.cs"));
+    // The screen read as a file: `Screen.Code` has comments and literals blanked out, which is what
+    // every assertion about *code* uses — one a comment could satisfy would stay green through the
+    // deletion it exists to catch, and one a comment could break would fail a build that behaves
+    // (§11). `Screen.Text` is the raw file, for the two assertions that are about a string literal.
+    static readonly SourceContract Screen = new("SessionActivity.cs");
+
+    static string SessionActivitySource => Screen.Text;
 
     static IReadOnlySet<string> ReferencedResources(string kind)
     {
-        var matches = Regex.Matches(SessionActivitySource, $@"Resource\.{kind}\.(\w+)");
+        var matches = Regex.Matches(Screen.Code, $@"Resource\.{kind}\.(\w+)");
         return matches.Select(m => m.Groups[1].Value).ToHashSet();
     }
 
@@ -85,6 +91,7 @@ public class SessionScreenContractTests
     [Theory]
     [InlineData("session_image_desc")]
     [InlineData("session_error_text")]
+    [InlineData("session_loading_text")]
     [InlineData("session_timer_desc")]
     [InlineData("session_timer_placeholder")]
     public void Strings_DeclaresSessionStrings(string name) =>
@@ -309,7 +316,7 @@ public class SessionScreenContractTests
     [InlineData("protected override void OnPause()")]
     [InlineData("protected override void OnResume()")]
     public void SessionActivity_WiresTheSessionToTheLifecycle(string snippet) =>
-        Assert.Contains(snippet, SessionActivitySource);
+        Assert.Contains(snippet, Screen.Code);
 
     // "Restart the pose clock whenever the image changes" is a domain rule, and it used to be
     // written here as `player.Next(); countdown.Restart();` (docs/ARCHITECTURE.md §17). It now lives
@@ -321,24 +328,129 @@ public class SessionScreenContractTests
     [InlineData("DateTime.Now")]
     [InlineData("SystemClock.")]
     public void SessionActivity_DoesNotDriveTheCountdownItself(string snippet) =>
-        Assert.DoesNotContain(snippet, SessionActivitySource);
+        Assert.DoesNotContain(snippet, Screen.Code);
 
     // One session object per screen. Two would mean two clocks and two counts, which is the shape
     // the consolidation removed (docs/DOMAIN-MODEL.md §9).
     [Fact]
     public void SessionActivity_ConstructsExactlyOneSession() =>
-        Assert.Single(Regex.Matches(SessionActivitySource, @"new DrawingSession<"));
+        Assert.Single(Regex.Matches(Screen.Code, @"new DrawingSession<"));
 
     // INV-PLY-5: decode failures are caught at the adapter and returned as null, so the loader never
-    // throws through the session. The catch lives in LoadBitmap, which no unit test can execute.
+    // throws through the session. The catch lives in DecodeBitmap — which the loader delegates to,
+    // and which the prefetch calls on a background thread — and no unit test can execute either.
     [Fact]
     public void SessionActivity_CatchesDecodeFailuresInTheLoader()
     {
-        var loader = SessionActivitySource[SessionActivitySource.IndexOf("Bitmap? LoadBitmap(")..];
+        var decode = Screen.MethodBody("DecodePose");
 
-        Assert.Contains("catch", loader);
-        Assert.Contains("return null;", loader);
+        Assert.Contains("catch", decode);
+        Assert.Contains("return null;", decode);
     }
+
+    // --- Decoding the next pose ahead of the boundary (FD-010) ---------------
+
+    // A decode running when the screen goes away cannot be stopped, so every way out has to make
+    // sure its result is thrown away rather than cached — otherwise this trades a stalled repaint
+    // for a leaked full-size bitmap. Android-only wiring: no other tier can reach it.
+    [Theory]
+    [InlineData("OnPause")]
+    [InlineData("OnDestroy")]
+    [InlineData("StartSession")]
+    [InlineData("Render")]
+    public void EveryWayOutOfTheScreen_AbandonsThePrefetch(string method) =>
+        Assert.Contains("CancelPrefetch(", Screen.MethodBody(method), StringComparison.Ordinal);
+
+    // Abandoning is only half the wiring: without these call sites nothing is ever decoded ahead and
+    // every boundary decodes on the repaint callback again — the feature reverted, with the
+    // abandonment assertions above still green.
+    [Theory]
+    [InlineData("Render")]
+    [InlineData("OnResume")]
+    public void TheRunningScreen_StartsThePrefetch(string method) =>
+        Assert.Contains("PrefetchUpcoming(", Screen.MethodBody(method), StringComparison.Ordinal);
+
+    // The paused branch's release has its own method so it has its own assertion: asserting on
+    // Render's whole body is satisfied by the completion branch alone, which would leave a drawer's
+    // pause holding a full-size bitmap for as long as the pause lasts.
+    [Fact]
+    public void PausingTheClocks_AbandonsThePrefetch() =>
+        Assert.Contains("CancelPrefetch(", Screen.MethodBody("OnClocksStopped"), StringComparison.Ordinal);
+
+    // The consume path. Deleting it restores the synchronous boundary decode this ticket exists to
+    // remove, and every other assertion here would stay green.
+    [Fact]
+    public void TheLoader_PrefersWhatWasDecodedAhead()
+    {
+        var loader = Screen.MethodBody("LoadPose");
+
+        Assert.Contains("prefetchedId", loader, StringComparison.Ordinal);
+        Assert.Contains("prefetchTask", loader, StringComparison.Ordinal);
+    }
+
+    // The decode has to actually leave the UI thread — the point of the ticket. A direct call would
+    // satisfy every other assertion in this class, including the ConfigureAwait one below (more
+    // easily, since there would be no await at all).
+    [Fact]
+    public void TheDecode_LeavesTheUiThread()
+    {
+        var decodeAhead = Screen.MethodBody("DecodeAhead");
+        var prefetch = Screen.MethodBody("PrefetchUpcoming");
+
+        Assert.Contains("Task.Run(", prefetch, StringComparison.Ordinal);
+        Assert.Contains("await ", decodeAhead, StringComparison.Ordinal);
+    }
+
+    // The session's own construction resolves its first image, which is a real decode, so the build
+    // belongs off this thread too (docs/ARCHITECTURE.md §20).
+    [Fact]
+    public void TheSessionIsBuiltOffTheUiThread() =>
+        Assert.Contains("Task.Run(", Screen.MethodBody("BuildSession"), StringComparison.Ordinal);
+
+    // Only the newest build may publish, and a superseded one must free what it decoded rather than
+    // leak it — the same rule the prefetch's generation guard enforces.
+    [Fact]
+    public void ASupersededBuild_IsDiscardedWithWhatItDecoded()
+    {
+        var publish = Screen.MethodBody("PublishSession");
+
+        Assert.Contains("buildGeneration", publish, StringComparison.Ordinal);
+        Assert.Contains("Release(", publish, StringComparison.Ordinal);
+    }
+
+    // The generation guard is the only thing stopping a decode that lost its race from overwriting
+    // the cache and leaking a bitmap; CancelPrefetch bumping the counter is the only thing that
+    // makes a result stale. Both are invisible to every other tier.
+    [Fact]
+    public void AnAbandonedDecode_IsSettledByItsGeneration()
+    {
+        Assert.Contains("generation != prefetchGeneration", Screen.MethodBody("DecodeAhead"),
+            StringComparison.Ordinal);
+        Assert.Contains("prefetchGeneration++", Screen.MethodBody("CancelPrefetch"),
+            StringComparison.Ordinal);
+    }
+
+    // The prefetch's continuation touches the ImageView, the bitmap it owns and the one-entry cache,
+    // all of which are main-thread state. ConfigureAwait(false) would resume it on a pool thread and
+    // make every one of those a race — the single mistake that would silently corrupt this feature.
+    [Fact]
+    public void ThePrefetchContinuation_StaysOnTheMainThread() =>
+        Assert.DoesNotContain("ConfigureAwait", Screen.Code, StringComparison.Ordinal);
+
+    // The tone follows the transition the session reports, and only that one (INV-SES-13). A screen
+    // that chimed on any change would sound at a rest starting and at the end of the run.
+    [Fact]
+    public void OnlyANewPoseChimes()
+    {
+        Assert.Contains("case SessionTick.PoseStarted", Screen.MethodBody("Tick"), StringComparison.Ordinal);
+        Assert.Single(Regex.Matches(Screen.Code, @"Chime\(\);"));
+    }
+
+    // INV-PLY-3: the failure budget is the player's to state, not the aggregate's to assume. Left
+    // implicit it is 100 consecutive decode attempts regardless of how big the pool actually is.
+    [Fact]
+    public void SessionActivity_StatesTheFailureBudget() =>
+        Assert.Contains("maxConsecutiveFailures:", Screen.MethodBody("BuildSession"), StringComparison.Ordinal);
 
     // --- Rule-of-thirds guides -----------------------------------------------
 

@@ -322,11 +322,15 @@ namespace FigureDrawing
 
             // FD-004: hand the pool + config to the session player screen. The preferences the player
             // needs travel as extras too — a screen never reads Settings on the far side (§16).
-            var handoff = library.Sample(MaxPoolHandoff, MaxPoolHandoffChars);
+            // How wide the handoff needs to be is a function of the session's length, not of the
+            // Binder buffer alone: the player cannot re-sample, so this is also what "Run it again"
+            // will redraw from (INV-POOL-6). MaxPoolHandoff stays the ceiling.
+            var bound = SessionSetup.HandoffBound(config.ImageCount, MaxPoolHandoff);
+            var handoff = library.Sample(bound, MaxPoolHandoffChars);
 
             if (handoff.Count < library.Count)
                 Log.Info(LogTag,
-                    $"Pool of {library.Count} exceeds the {MaxPoolHandoff} handoff bound; " +
+                    $"Pool of {library.Count} exceeds the {bound} handoff bound; " +
                     $"sampling {handoff.Count} for this session.");
 
             var intent = new Intent(this, typeof(SessionActivity));

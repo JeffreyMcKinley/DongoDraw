@@ -66,6 +66,7 @@
     <string name="session_stats_format">{0} drawn · {1} skipped</string>
     <string name="session_progress_heading">Session progress</string>
     <string name="session_error_text">Couldn\'t display these images. Go back and pick another folder.</string>
+    <string name="session_loading_text">Getting the first pose ready…</string>
 
     <string name="tool_grayscale_text">Grayscale</string>
     <string name="tool_flip_text">Flip</string>

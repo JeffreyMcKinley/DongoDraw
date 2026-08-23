@@ -1,5 +1,12 @@
 # FD-011 — The session says what changed, not just that something did
 
+Status: shipped
+
+> **Shipped**, ahead of FD-010 as this ticket's out-of-scope section asked. Nine assertions became
+> enum comparisons and no scenario changed; the four chime tests in `SessionE2ETests` passed
+> untouched, which is the check that this changed no behaviour. `Completed` is reported for a tick
+> only — `End()` still returns nothing, the narrower of the two readings in Open questions.
+
 **Story:** _As an artist, I want the change-of-pose tone to mean a new pose — not a rest starting,
 and not the session ending._
 **Depends on:** FD-003, FD-005
@@ -42,17 +49,17 @@ ticket.
 
 ## Acceptance criteria
 
-- [ ] A pose expiring with no break configured reports `PoseStarted`; the same expiry with a break
+- [x] A pose expiring with no break configured reports `PoseStarted`; the same expiry with a break
       configured reports `BreakStarted`, and the break's own expiry reports `PoseStarted`.
-- [ ] The tick that reaches the configured count reports `Completed`, whether or not a break is
+- [x] The tick that reaches the configured count reports `Completed`, whether or not a break is
       configured, and never `PoseStarted`.
-- [ ] A tick on a draft, a complete, a paused, or an unexpired session reports `None` and changes
+- [x] A tick on a draft, a complete, a paused, or an unexpired session reports `None` and changes
       nothing.
-- [ ] The screen chimes once per boundary with a break configured, not twice, and does not chime on
+- [x] The screen chimes once per boundary with a break configured, not twice, and does not chime on
       the tick that completes the session.
-- [ ] `CompletedCount`, `SkippedCount` and `TotalDrawingTime` are unchanged by this ticket at every
+- [x] `CompletedCount`, `SkippedCount` and `TotalDrawingTime` are unchanged by this ticket at every
       point — the transition is reported, not redefined.
-- [ ] `Next`, `Skip` and `End` keep their current signatures: a manual command is not a tick and
+- [x] `Next`, `Skip` and `End` keep their current signatures: a manual command is not a tick and
       still does not chime.
 
 ## Tests

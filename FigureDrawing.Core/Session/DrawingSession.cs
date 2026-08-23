@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 
 namespace FigureDrawing.Core;
 
@@ -30,6 +30,28 @@ public enum PauseReason
 
     // The drawer tapped Pause.
     User
+}
+
+// What one call to Tick() did. The screen used to reconstruct this from the state left behind
+// (`if (!session.OnBreak) Chime();`), which put a rule — what counts as a new pose — in an Activity
+// where no unit test could reach it (INV-SES-13). A return value rather than a concept with a
+// lifetime, so it is not a tenth domain object (docs/DOMAIN-MODEL.md §9).
+public enum SessionTick
+{
+    // Nothing expired: a draft, a complete or a paused session, or a phase with time still on its
+    // clock. First so a missed switch arm reads as "nothing happened".
+    None,
+
+    // A reference image is now on screen with a full clock — either a pose expired straight into the
+    // next one, or a rest ended.
+    PoseStarted,
+
+    // A pose expired into the configured rest. The next pose's image is already loaded underneath.
+    BreakStarted,
+
+    // The tick that ended the session: the configured count was reached, or the failure budget ran
+    // out. Never reported alongside a new pose.
+    Completed
 }
 
 // Non-generic partner of DrawingSession<TImage> (same name, different arity) for the one thing
@@ -114,6 +136,12 @@ public sealed class DrawingSession<TImage> where TImage : class
     readonly Func<string, TImage?> _load = _ => null;
     readonly Action<string>? _onUnreadable;
     readonly int _maxConsecutiveFailures;
+
+    // Ids the loader has already reported unreadable. The pool repeats whenever the configured count
+    // exceeds it, so without this a broken file costs a real decode on every pass to learn what this
+    // session already knows (INV-PLY-8). Per session and never persisted: a file fixed between
+    // sessions must get another chance.
+    readonly HashSet<string> _unreadable = [];
 
     // The draft constructor: parsed inputs and nothing else. INV-SET-4 — this runs on every
     // keystroke, so it copies no pool, starts no clock and walks no tree.
@@ -252,6 +280,49 @@ public sealed class DrawingSession<TImage> where TImage : class
     // The id behind CurrentImage. Opaque to the domain (INV-IMG-1): never parsed, split or sorted.
     public string? CurrentImageId { get; private set; }
 
+    // The id of the pose after this one, so the screen can decode it while the current pose is
+    // still up rather than on the boundary tick (INV-PLY-7). Strictly a query: no phase change, no
+    // clock, no counting.
+    //
+    // Refilling a drained pass is the one mutation it is allowed. A pass is materialised whole
+    // (INV-SES-4), so drawing it here or at the Advance that follows yields the identical sequence
+    // from the same seed — without that carve-out INV-SES-1 and INV-X-12 would forbid a query that
+    // mutates at all.
+    //
+    // Ids already proven unreadable are passed over: the session will skip them without asking the
+    // loader (INV-PLY-8), so naming one here would send the screen off to decode a file that is
+    // never displayed, and leave the boundary to decode the replacement synchronously — the exact
+    // stall this query exists to remove.
+    //
+    // Null exactly when the session is over, was degenerate to begin with, or has nothing drawable
+    // left to name. Deliberately not "null once no further pose will be shown": with Remaining at 1
+    // a skip still lands on another image, and teaching this query that rule is how a peek and the
+    // counters become interdependent.
+    public string? UpcomingImageId
+    {
+        get
+        {
+            if (Phase is SessionPhase.Draft or SessionPhase.Complete
+                || _targetCount <= 0 || _pool.Count == 0)
+                return null;
+
+            if (_upcoming.Count == 0)
+                Refill();
+
+            // Enumerating a Queue walks it head-first without consuming, which is what keeps this a
+            // peek. A pass whose every remaining id is known-broken answers null rather than
+            // refilling again: the next pass is drawn from the same pool, so it would answer the
+            // same thing.
+            foreach (var id in _upcoming)
+            {
+                if (!_unreadable.Contains(id))
+                    return id;
+            }
+
+            return null;
+        }
+    }
+
     public bool IsComplete => Phase == SessionPhase.Complete;
 
     // True on a break, so the screen knows to show the rest overlay instead of the pose.
@@ -352,21 +423,30 @@ public sealed class DrawingSession<TImage> where TImage : class
 
     // Repaint-loop hook: hand the clock a chance to expire the current phase. Safe to call at any
     // cadence — time comes from a monotonic clock, so a slow or dropped tick cannot change how much
-    // time a pose gets. Returns true when the phase changed, which is the screen's cue to repaint
-    // the image rather than just the timer.
-    public bool Tick()
+    // time a pose gets. Reports which transition it made, so the screen never has to infer one from
+    // the state left behind (INV-SES-13).
+    public SessionTick Tick()
     {
         if (Phase is SessionPhase.Draft or SessionPhase.Complete || IsPaused || !IsExpired)
-            return false;
+            return SessionTick.None;
 
         if (Phase == SessionPhase.Break)
         {
             StartPose();
-            return true;
+            return SessionTick.PoseStarted;
         }
 
         CompletePose();
-        return true;
+
+        // CompletePose lands in exactly one of three places: the target was reached (or the failure
+        // budget ran out inside Resolve), a rest is configured, or the next pose is already up. The
+        // phase it left behind is which, so this reads the branch rather than repeating it.
+        return Phase switch
+        {
+            SessionPhase.Complete => SessionTick.Completed,
+            SessionPhase.Break => SessionTick.BreakStarted,
+            _ => SessionTick.PoseStarted,
+        };
     }
 
     // Timer expiry or a manual "done" tap: count this pose, bank its drawing time, and move on
@@ -586,11 +666,20 @@ public sealed class DrawingSession<TImage> where TImage : class
         var failures = 0;
         while (Phase != SessionPhase.Complete && CurrentImageId is { } id)
         {
-            var image = _load(id);
-            if (image is not null)
+            // Already proven unreadable this session: skip it without asking the loader a second
+            // time (INV-PLY-8). Everything past this point is unchanged — the image still travels
+            // the skip path and still counts against the budget, because INV-PLY-2 and INV-PLY-3
+            // are about what the session does with a failure, not about how it found out.
+            if (!_unreadable.Contains(id))
             {
-                CurrentImage = image;
-                return;
+                var image = _load(id);
+                if (image is not null)
+                {
+                    CurrentImage = image;
+                    return;
+                }
+
+                _unreadable.Add(id);
             }
 
             _onUnreadable?.Invoke(id);

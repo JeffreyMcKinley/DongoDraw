@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.RegularExpressions;
 
 namespace FigureDrawing.Tests;
@@ -17,173 +16,31 @@ namespace FigureDrawing.Tests;
 // or a reformat must not fail a build that still behaves.
 public class FolderMemoryContractTests
 {
-    static readonly string Source = File.ReadAllText(TestPaths.Path("MainActivity.cs"));
+    static readonly SourceContract Activity = new("MainActivity.cs");
+
+    static string Source => Activity.Text;
 
     // MainActivity with every comment, string and char literal blanked out, positions preserved.
-    static readonly string Code = StripCommentsAndLiterals(Source);
+    static string Code => Activity.Code;
 
-    // Replaces the contents of comments and literals with spaces, keeping the length and the line
-    // breaks so offsets still line up with the original file. Blanking rather than deleting also
-    // keeps a brace inside a string or an interpolation hole out of the brace matcher below.
-    static string StripCommentsAndLiterals(string source)
-    {
-        var output = new StringBuilder(source.Length);
-        var i = 0;
+    static string MethodBody(string methodName) => Activity.MethodBody(methodName);
 
-        void Blank(char c) => output.Append(c == '\n' ? '\n' : ' ');
-
-        while (i < source.Length)
-        {
-            var c = source[i];
-            var next = i + 1 < source.Length ? source[i + 1] : '\0';
-
-            if (c == '/' && next == '/')
-            {
-                while (i < source.Length && source[i] != '\n')
-                    Blank(source[i++]);
-                continue;
-            }
-
-            if (c == '/' && next == '*')
-            {
-                Blank(source[i++]);
-                while (i < source.Length && !(source[i] == '*' && i + 1 < source.Length && source[i + 1] == '/'))
-                    Blank(source[i++]);
-
-                for (var end = 0; end < 2 && i < source.Length; end++)
-                    Blank(source[i++]);
-
-                continue;
-            }
-
-            if (c is '"' or '\'')
-            {
-                // A verbatim string ends on a quote that is not doubled; every other literal ends on
-                // the first unescaped closing quote.
-                var verbatim = c == '"' && output.Length > 0 && Verbatim(output);
-                var quote = c;
-
-                Blank(source[i++]);
-
-                while (i < source.Length)
-                {
-                    if (verbatim)
-                    {
-                        if (source[i] == quote && i + 1 < source.Length && source[i + 1] == quote)
-                        {
-                            Blank(source[i++]);
-                            Blank(source[i++]);
-                            continue;
-                        }
-
-                        if (source[i] == quote)
-                            break;
-                    }
-                    else
-                    {
-                        if (source[i] == '\\' && i + 1 < source.Length)
-                        {
-                            Blank(source[i++]);
-                            Blank(source[i++]);
-                            continue;
-                        }
-
-                        if (source[i] == quote || source[i] == '\n')
-                            break;
-                    }
-
-                    Blank(source[i++]);
-                }
-
-                if (i < source.Length)
-                    Blank(source[i++]);
-
-                continue;
-            }
-
-            output.Append(c);
-            i++;
-        }
-
-        return output.ToString();
-    }
-
-    // Whether the quote just consumed was preceded by @ (possibly after $), i.e. opens a verbatim
-    // string. The prefix is still in the output because it is ordinary code.
-    static bool Verbatim(StringBuilder emitted)
-    {
-        for (var i = emitted.Length - 1; i >= 0 && emitted.Length - i <= 2; i--)
-        {
-            if (emitted[i] == '@')
-                return true;
-
-            if (emitted[i] != '$')
-                return false;
-        }
-
-        return false;
-    }
-
-    // The body of a method declared in MainActivity, brace-matched from its declaration. The
-    // declaration is located by name at the start of a line and must be followed by nothing but
-    // whitespace and its opening brace, so a mention of the method elsewhere — including a call —
-    // cannot retarget the search.
-    static string MethodBody(string methodName)
-    {
-        var declaration = Regex.Match(
-            Code,
-            $@"(?m)^[ \t]*(?:[\w.<>?\[\],]+[ \t]+)+{Regex.Escape(methodName)}[ \t]*\([^)\n]*\)[ \t]*$");
-
-        Assert.True(declaration.Success, $"MainActivity no longer declares a method named '{methodName}'.");
-
-        var open = Code.IndexOf('{', declaration.Index + declaration.Length);
-        Assert.True(open >= 0, $"No body found for '{methodName}'.");
-        Assert.True(
-            Code[(declaration.Index + declaration.Length)..open].Trim().Length == 0,
-            $"'{methodName}' is not followed by a block body; this test cannot read it.");
-
-        var depth = 0;
-        for (var i = open; i < Code.Length; i++)
-        {
-            if (Code[i] == '{') depth++;
-            else if (Code[i] == '}' && --depth == 0)
-                return Code[open..(i + 1)];
-        }
-
-        throw new InvalidOperationException($"Unbalanced braces after '{methodName}'.");
-    }
-
-    // The stripper is what makes every assertion below mean something, so it is checked rather than
-    // trusted — against a fixture rather than against MainActivity, so refactoring the app cannot
-    // fail the test that validates the tool.
+    // The stripper itself is exercised against fixtures in SourceContractTests. What belongs here is
+    // that the real MainActivity survives the same pass — a stripper that dropped a line would make
+    // every assertion below vacuous.
     [Fact]
-    public void TheStripper_RemovesCommentsAndLiterals()
+    public void MainActivity_SurvivesTheStripper()
     {
-        const string fixture =
-            "var a = Keep(); // Dropped()\\n" +
-            "/* Dropped() */ var b = \"Dropped()\";\\n" +
-            "var c = @\"Dropped() \"\" still dropped\";\\n" +
-            "var d = $\"{Kept()} Dropped()\";\\n" +
-            "var e = '}';\\n";
-
-        var stripped = StripCommentsAndLiterals(fixture);
-
-        Assert.Equal(fixture.Length, stripped.Length);
-        Assert.Equal(fixture.Count(c => c == '\n'), stripped.Count(c => c == '\n'));
-        Assert.DoesNotContain("Dropped()", stripped, StringComparison.Ordinal);
-        Assert.Contains("Keep()", stripped, StringComparison.Ordinal);
-        // Code inside an interpolation hole goes with the literal, deliberately: a method named
-        // inside a log message is not wiring, and treating it as code is how an assertion ends up
-        // satisfied by a diagnostic string.
-        Assert.DoesNotContain("Kept()", stripped, StringComparison.Ordinal);
-
-        // A brace inside a literal must never reach the brace matcher.
-        Assert.DoesNotContain("}'", stripped, StringComparison.Ordinal);
-
-        // And it is the real MainActivity the other tests read, so it must survive the same pass.
         Assert.Equal(Source.Length, Code.Length);
         Assert.DoesNotContain("figuredrawing.db", Code, StringComparison.Ordinal);
     }
+
+    // How wide the handoff is is a session-setup rule with its own unit tests, but nothing else pins
+    // that the screen actually asks for it: reverting this one call restores the flat bound that
+    // INV-POOL-6 was narrowed away from, with a green suite.
+    [Fact]
+    public void StartingASession_BoundsTheHandoffByTheSessionsLength() =>
+        Assert.Contains("SessionSetup.HandoffBound(", MethodBody("StartSession"), StringComparison.Ordinal);
 
     // Without a persisted grant the folder is remembered and unreadable: the uri survives, the
     // permission does not, and every relaunch shows the empty state.
