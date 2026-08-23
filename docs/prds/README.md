@@ -13,6 +13,7 @@ renumber an id.
 | ID | Title | Context |
 |----|-------|---------|
 | [FD-009](FD-009-async-reference-library.md) | Reference library loads without freezing the screen | Reference Library |
+| [FD-013](FD-013-folder-memory-regression.md) | Remembered folder lost on close (regression of FD-012) | Reference Library |
 
 FD-009 comes out of the repo-wide review of 2026-08-16, along with FD-010 and FD-011, which have
 since shipped. It is the remaining main-thread decode: the folder walk and up to 24 preview
