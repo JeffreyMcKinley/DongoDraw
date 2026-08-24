@@ -511,6 +511,7 @@ namespace FigureDrawing
             // Handling a folder result must never crash the app. Persisting the grant, writing
             // settings, or enumerating the tree can each throw (SecurityException, provider quirks,
             // out-of-memory on large images); a failure here shows a message instead of dying.
+            var previousCollection = settings.LastCollection;
             try
             {
                 // Persist the read grant so the folder can be reused on the next launch. Pass the
@@ -523,15 +524,22 @@ namespace FigureDrawing
                 // can cost them the one they still use. Re-picking the same folder releases nothing.
                 ReleaseSupersededGrants(treeUri.ToString());
 
+                // Set in memory before LoadFolder so RenderLibrary can classify the state, but
+                // persist only after the load succeeds — a folder that fails to load must not be
+                // remembered, or every relaunch restores into an error state.
                 settings.LastCollection = treeUri.ToString();
+                LoadFolder(treeUri);
+
+                // Immediate checkpoint (INV-STO-5): a swipe-to-close after this line has nothing
+                // left to lose, and the OnPause backstop is a belt, not the buckle.
                 settings.Save();
 
                 Log.Info(LogTag, $"Folder selected: {treeUri}");
-                LoadFolder(treeUri);
             }
             catch (Exception ex)
             {
                 Log.Error(LogTag, $"Failed to open folder {treeUri}: {ex}");
+                settings.LastCollection = previousCollection;
                 ResetLibrary();
 
                 // After ResetLibrary, not before: RenderLibrary writes empty_folder_text for an

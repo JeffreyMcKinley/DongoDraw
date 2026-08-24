@@ -97,7 +97,8 @@ namespace FigureDrawing.Data
         }
 
         // Persists the current values (insert or update). Called at named moments only — a folder
-        // was picked, Start was pressed, the screen was left — never on every keystroke (INV-SET-P4).
+        // was picked and loaded successfully, Start was pressed, a settings toggle was flipped, a
+        // break preset was tapped, the screen was left — never on every keystroke (INV-SET-P4).
         //
         // The write is forced all the way into the datafile before returning (INV-STO-5). LiteDB is
         // write-ahead logged: an upsert alone leaves the new value in "<name>-log<ext>" until a

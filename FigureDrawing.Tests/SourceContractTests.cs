@@ -1,7 +1,8 @@
 namespace FigureDrawing.Tests;
 
-// The tool the contract tier is built on (docs/ARCHITECTURE.md §11). Six assertions across two
-// files now depend on it reading the right span of the right file, and a brace matcher that
+// The tool the contract tier is built on (docs/ARCHITECTURE.md §11). Three consumer files
+// (FolderMemoryContractTests, CrossActivityContractTests, SessionScreenContractTests) depend on it
+// reading the right span of the right file, and a brace matcher that
 // silently returns the wrong method is worse than no assertion at all — it reports green about code
 // it never looked at. Exercised against fixture strings rather than against a real Activity, so
 // refactoring the app cannot fail the test that validates the tool.

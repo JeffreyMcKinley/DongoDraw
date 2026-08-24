@@ -507,11 +507,11 @@ dropping the write — losing preferences quietly is worse than failing loudly.
 - `INV-SET-P3` — **Settings seed, they do not control.** Values are copied into the setup screen on
   launch and into intent extras on Start. Neither a session nor the setup logic reads settings at
   runtime.
-- `INV-SET-P4` — **Written at named moments only** — a folder was picked, Start was pressed, a
-  settings toggle was flipped, a break preset was tapped, the screen was left (`OnPause`). Never
-  on a keystroke, and never from a background thread. Leaving the screen is the backstop for how
-  apps actually end: swiped off the recents list or reclaimed while backgrounded, neither of
-  which runs `OnDestroy`.
+- `INV-SET-P4` — **Written at named moments only** — a folder was picked and loaded successfully,
+  Start was pressed, a settings toggle was flipped, a break preset was tapped, the screen was left
+  (`OnPause`). Never on a keystroke, and never from a background thread. Leaving the screen is the
+  backstop for how apps actually end: swiped off the recents list or reclaimed while backgrounded,
+  neither of which runs `OnDestroy`.
 - `INV-SET-P5` — **`LastCollection` holds a library reference, not its contents** (`INV-GRP-1`),
   and a stale one is expected (`INV-GRP-5`). The reference is what a launch restores *and* where
   the picker reopens — pointing the picker needs no grant, restoring the library does. What makes a
@@ -627,7 +627,8 @@ invariant families has one test file per family rather than one per type.
 | `INV-STO-5` | `Settings.Save` (checkpoint) | `SettingsTests` kill + truncation cases, `FolderPickerUiTests.PickedFolder_SurvivesTheProcessBeingKilled` |
 | `INV-REF-*` | `LibraryReference`, wired by `MainActivity` | `LibraryReferenceTests`, `FolderMemoryContractTests`, `FolderPickerUiTests` |
 | Cross-context flows | The objects together | `SessionE2ETests` |
-| `INV-X-*` | Structural | Project references, `AndroidBuildTests`, `SessionScreenContractTests`, `FolderMemoryContractTests`, code review |
+| `INV-X-*` | Structural | Project references, `AndroidBuildTests`, `SessionScreenContractTests`, `FolderMemoryContractTests`, `CrossActivityContractTests`, code review |
+| `INV-SET-P4`, `INV-STO-1` | Structural (Activity isolation) | `CrossActivityContractTests` (SessionActivity never touches Settings; MainActivity has no async methods) |
 
 Adding an invariant means adding a named test. Removing one means saying so in a ticket — an
 invariant deleted quietly is how a domain model stops describing the code.
@@ -696,6 +697,12 @@ Changed by FD-011 and FD-010:
 | `INV-POOL-6` | **Narrowed** | The bound was a flat 1000 sized only by the Binder buffer. It is now derived from the session's length as well, because the player is handed an array and cannot re-sample. The rule moved to `SessionSetup`, where a config-derived number belongs; the library still owns the sampling |
 | `INV-SES-1` | **Exception stated** | "Commands only" now carries one named carve-out: `UpcomingImageId` may refill a drained pass in order to answer (`INV-PLY-7`). It changes nothing else, and a pass is materialised whole, so the sequence is identical either way |
 | `INV-X-12` | **Exception stated** | Same carve-out from the other side: a query that mutates was forbidden outright, and is now forbidden except where the mutation is stated as part of the query's own rule |
+
+Changed by FD-013:
+
+| Rule | Change | Why |
+|---|---|---|
+| `INV-SET-P4` | **Tightened** | Save deferred past a successful load; a folder that fails to load is no longer persisted (FD-013) |
 
 One behaviour did change, deliberately: when the consecutive-failure budget is exhausted the session
 now banks **no** partial time for the unreadable image it died on. The old `SessionPlayer` routed
