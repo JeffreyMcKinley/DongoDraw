@@ -1,6 +1,7 @@
 # PRDs — FigureDrawing
 
-Requirements docs for work that is planned but not built. One file per unit of work, written
+Requirements docs for planned work, plus shipped tickets kept as the record of how a decision was
+made and where it departed from the plan. One file per unit of work, written
 against [ARCHITECTURE.md](../ARCHITECTURE.md) and [DOMAIN-MODEL.md](../DOMAIN-MODEL.md) — a PRD that
 contradicts them is wrong, not visionary. Written with the `prd-generator` skill; the templates live
 in `.claude/skills/prd-generator/references/`.
@@ -16,19 +17,21 @@ renumber an id.
 | [FD-014](FD-014-countdown-warning-beep.md) | Countdown warning beep at 10 seconds remaining | Session Execution / Preferences |
 | [FD-015](FD-015-skip-break-button.md) | Skip break button ("Ready") during inter-pose delay | Session Execution |
 
-FD-009 comes out of the repo-wide review of 2026-08-16, along with FD-010 and FD-011, which have
-since shipped. It is the remaining main-thread decode: the folder walk and up to 24 preview
-thumbnails inside `OnCreate`. FD-010 established how this app does background work and abandonment
-(`SessionActivity.PrefetchUpcoming` / `DecodeAhead` / `CancelPrefetch`, ARCHITECTURE.md §7), so the
-shape FD-009 needs is now written down rather than hypothetical.
 
 ## Shipped
 
-FD-001 (folder selection), FD-002 (session setup), FD-003 (session engine), FD-004 (player screen),
-FD-005 (countdown), FD-006 (skip), FD-007 (end + summary), FD-008 (foldable layout). Their acceptance
-criteria are the invariant tables in [DOMAIN-MODEL.md](../DOMAIN-MODEL.md) and the suites named in
-[ARCHITECTURE.md §11](../ARCHITECTURE.md#11-testing-strategy). The original ticket stubs were an
-early experiment and were never committed.
+The MVP stories: FD-001 (folder selection), FD-002 (session setup), FD-003 (session engine),
+FD-004 (player screen), FD-005 (countdown), FD-006 (skip), FD-007 (end + summary), FD-008 (foldable
+layout). Their acceptance criteria are the invariant tables in
+[DOMAIN-MODEL.md](../DOMAIN-MODEL.md) and the suites named in
+[ARCHITECTURE.md §11](../ARCHITECTURE.md#11-testing-strategy) — they have no ticket files of their
+own; the original stubs were an early experiment and were never committed.
+
+Since then, with a committed ticket kept as the record of how it was built:
+
+| ID | Title | Left behind |
+|----|-------|-------------|
+| [FD-009](FD-009-async-reference-library.md) | The library loads off the UI thread | `INV-X-13`, `LibraryLoader`, `LoadGeneration`, `LibraryLoadState`, `LibraryLoadContractTests`, and the background-work shape in [ARCHITECTURE.md §7](../ARCHITECTURE.md#7-threading). Two acceptance criteria are open pending manual verification on a real device |
 
 [FD-011](FD-011-tick-reports-what-changed.md) (the session says what changed) and
 [FD-010](FD-010-pose-decode-off-the-tick.md) (a pose boundary never blocks the repaint loop) shipped

@@ -71,8 +71,8 @@ public sealed class ReferenceLibrary
     }
 
     // No folder picked yet. A first run shows this, and so does a launch whose persisted permission
-    // has been revoked. A fresh instance rather than a shared singleton: an aggregate root with a
-    // public Enumerate() should not be process-wide mutable state.
+    // has been revoked. A fresh instance rather than a shared singleton: cheap, and it keeps the
+    // empty library from being process-wide state two screens could come to share.
     public static ReferenceLibrary Empty => new();
 
     // The tree URI / document id of the picked folder. Stable across launches — that is what makes
@@ -91,8 +91,13 @@ public sealed class ReferenceLibrary
     // Zero images is normal, not an error (INV-GRP-4): it shows the empty state and blocks Start.
     public bool IsEmpty => Pool.Count == 0;
 
-    // Re-walk the tree. Called at construction and again whenever the folder may have changed.
-    public void Enumerate()
+    // Walk the tree. The constructor is the only caller, and it is private so that stays true:
+    // rebuilding Pool in place would let a screen already reading the pool see it half-built
+    // (INV-X-13), and a rule enforced by the compiler beats one enforced by a comment.
+    //
+    // A *re*-walk is a fresh ReferenceLibrary, swapped in whole. Membership is still re-derived on
+    // every load (INV-GRP-1) — by a new instance rather than by mutating the live one.
+    void Enumerate()
     {
         if (_tree is null)
         {

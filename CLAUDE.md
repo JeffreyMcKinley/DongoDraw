@@ -79,7 +79,7 @@ open GitHub Issues. See [`docs/agents/issue-tracker.md`](docs/agents/issue-track
 
 ### Triage labels
 
-The five canonical roles, unrenamed, carried on a `Status:` line in each ticket. See
+The five canonical roles plus a local `shipped`, carried on a `Status:` line in each ticket. See
 [`docs/agents/triage-labels.md`](docs/agents/triage-labels.md).
 
 ### Domain docs

@@ -72,8 +72,27 @@ namespace FigureDrawing
         TextView libraryMore = null!;
 
         // The picked folder and every image found beneath it, in enumeration order. Its pool is what
-        // is handed to the session when Start is tapped.
+        // is handed to the session when Start is tapped. Only ever written on the main thread: the
+        // loader builds a fresh ReferenceLibrary on its worker and this swaps it in whole, so a
+        // reader can never see a half-built pool (INV-X-13).
         ReferenceLibrary library = ReferenceLibrary.Empty;
+
+        // Reads a folder off the UI thread, and owns abandoning a load that has been superseded.
+        LibraryLoader loader = null!;
+
+        // The tree uri whose pool `library` holds, so a re-walk of the same folder can keep it.
+        // Null until a folder has been loaded; cleared whenever the pool is.
+        string? loadedTreeUri;
+
+        // Whether OnStop released the grid and it needs rebuilding. OnStart fires immediately after
+        // OnCreate, which has already started a load, so without this every cold start walks twice.
+        bool gridReleased;
+
+        // Whether the folder picker is open. The picker is a full-screen Activity in another
+        // process, so it stops this screen — and its result arrives *after* OnStart, while
+        // Settings.LastCollection still names the old folder. Without this, every pick starts a full
+        // walk of the folder the artist is in the middle of replacing.
+        bool awaitingPickResult;
 
         // --- Setup ---
         EditText secondsInput = null!;
@@ -107,6 +126,11 @@ namespace FigureDrawing
                 $"poseDuration={settings.PoseDurationSeconds}s, break={settings.BreakSeconds}s, " +
                 $"shuffle={settings.ShuffleImages}, grayscale={settings.GrayscaleMode}");
 
+            // The application's resolver, not this Activity's: an Activity's ContentResolver reaches
+            // back to the Activity through its ContextImpl, so a walk still running after OnDestroy
+            // would pin the destroyed screen and its whole view tree.
+            loader = new LibraryLoader(ApplicationContext!.ContentResolver!);
+
             BindPanes();
             BindLibrary();
             BindSetup();
@@ -122,11 +146,59 @@ namespace FigureDrawing
 
         protected override void OnDestroy()
         {
+            // Abandon before anything else is torn down: a load that lands afterwards would render
+            // into a destroyed screen's views and keep this Activity's whole view tree reachable
+            // from the worker until it finished. Null-guarded because OnCreate can throw before the
+            // loader is assigned — Settings.Open runs first.
+            loader?.Abandon();
+
             // ClearThumbnails guards its own fields — OnCreate can throw before BindLibrary runs.
             ClearThumbnails();
 
             settings?.Dispose();
             base.OnDestroy();
+        }
+
+        // Coming back into view. MainActivity is stopped rather than destroyed while a session runs,
+        // so this is the return path from the player as well as from the launcher — and re-walking
+        // here is what picks up images added to the folder in another app (INV-GRP-1).
+        protected override void OnStart()
+        {
+            base.OnStart();
+
+            // Skipped on the first OnStart after OnCreate: RestoreLastFolder has just run and a cold
+            // start must not walk the tree twice. Only a grid OnStop released needs rebuilding.
+            if (!gridReleased)
+                return;
+
+            gridReleased = false;
+
+            // The pick's result lands next and starts the load itself — including the cancelled
+            // case, which restores the folder that was already there.
+            if (awaitingPickResult)
+            {
+                return;
+            }
+
+            RestoreLastFolder();
+        }
+
+        // Released here, not in OnDestroy: MainActivity is merely *stopped* while SessionActivity
+        // runs, so previews held to OnDestroy would sit under every session and the app's real peak
+        // would be the grid plus the pose plus the pose being decoded. Affordable only because the
+        // rebuild in OnStart is off the UI thread.
+        //
+        // This depends on SessionActivity being opaque and full-screen. Give it a translucent or
+        // dialog theme and MainActivity never reaches Stopped, and this silently stops running.
+        protected override void OnStop()
+        {
+            // Abandon before releasing: a load already past its guard would otherwise repopulate the
+            // grid this just cleared, putting back the previews the release exists to remove.
+            loader?.Abandon();
+            ClearThumbnails();
+            gridReleased = true;
+
+            base.OnStop();
         }
 
         // Coming back from a finished session: the pool and inputs are unchanged, but the session may
@@ -425,8 +497,13 @@ namespace FigureDrawing
             if (LastPickedDocumentUri() is { } initial)
                 intent.PutExtra(DocumentsContract.ExtraInitialUri, initial);
 
+            // Set before the picker can stop this screen: OnStart must not re-walk the folder that
+            // is about to be replaced. Cleared again if the picker never opens, or the flag would
+            // stay raised and every later return to this screen would skip its rebuild.
+            awaitingPickResult = true;
+
             // Launching the picker crosses the system boundary, so throwing is not a defined outcome
-            // (§9, INV-X-11): an image with no documents provider, or one where the user disabled it,
+            // (§9, INV-X-11): a device with no documents provider, or one where the user disabled it,
             // must show a message rather than take the process down on a tap.
             try
             {
@@ -434,8 +511,13 @@ namespace FigureDrawing
             }
             catch (Exception error)
             {
-                Log.Error(LogTag, $"Could not open the folder picker: {error}");
-                emptyLabel.Text = GetString(Resource.String.folder_error_text);
+                awaitingPickResult = false;
+                Log.Error(LogTag, $"Could not open the folder picker: {error.GetType().Name}: {error.Message}");
+
+                // Its own message, not folder_error_text: "try picking it again" is wrong advice
+                // when there is nothing on the device that can pick. The library already loaded is
+                // still fine, so this captions without disturbing it.
+                emptyLabel.Text = GetString(Resource.String.picker_error_text);
                 emptyLabel.Visibility = ViewStates.Visible;
             }
         }
@@ -491,7 +573,8 @@ namespace FigureDrawing
             foreach (var permission in ContentResolver!.PersistedUriPermissions)
             {
                 using (permission)
-                    grants.Add(new PersistedGrant(permission.Uri?.ToString(), permission.IsReadPermission));
+                using (var granted = permission.Uri)
+                    grants.Add(new PersistedGrant(granted?.ToString(), permission.IsReadPermission));
             }
 
             return grants;
@@ -501,12 +584,20 @@ namespace FigureDrawing
         {
             base.OnActivityResult(requestCode, resultCode, data);
 
-            if (requestCode != PickFolderRequestCode || resultCode != Result.Ok)
+            if (requestCode != PickFolderRequestCode)
                 return;
 
-            var treeUri = data?.Data;
+            awaitingPickResult = false;
+
+            // A cancelled pick, or one that came back without a folder, still has to rebuild: the
+            // picker stopped this screen, OnStart deferred to this method, and the artist expects
+            // the library they already had.
+            var treeUri = resultCode == Result.Ok ? data?.Data : null;
             if (treeUri is null)
+            {
+                RestoreLastFolder();
                 return;
+            }
 
             // Handling a folder result must never crash the app. Persisting the grant, writing
             // settings, or enumerating the tree can each throw (SecurityException, provider quirks,
@@ -524,26 +615,40 @@ namespace FigureDrawing
                 // can cost them the one they still use. Re-picking the same folder releases nothing.
                 ReleaseSupersededGrants(treeUri.ToString());
 
-                // Set in memory before LoadFolder so RenderLibrary can classify the state, but
-                // persist only after the load succeeds — a folder that fails to load must not be
-                // remembered, or every relaunch restores into an error state.
+                // FD-013 wants the folder persisted only once it is known to be usable, and FD-009
+                // made the walk asynchronous — so "usable" is established *here*, synchronously,
+                // rather than by waiting on a load that has not run yet. This is the step that
+                // actually fails for a folder that cannot be opened: no document id means no tree to
+                // walk, and it throws before anything is written.
+                //
+                // What that narrows: a folder that opens but turns out to hold nothing is still
+                // remembered, which INV-GRP-4 already calls a legitimate state, and a walk that
+                // fails later shows LibraryStatus.Unavailable against a reference the artist can see
+                // and re-pick. What it keeps: the persistence chain has no `await` anywhere in it,
+                // so no continuation stands between picking a folder and its being durable.
+                if (DocumentsContract.GetTreeDocumentId(treeUri) is null)
+                    throw new InvalidOperationException("The picked tree has no document id.");
+
                 settings.LastCollection = treeUri.ToString();
-                LoadFolder(treeUri);
 
                 // Immediate checkpoint (INV-STO-5): a swipe-to-close after this line has nothing
                 // left to lose, and the OnPause backstop is a belt, not the buckle.
                 settings.Save();
 
                 Log.Info(LogTag, $"Folder selected: {treeUri}");
+
+                // Last, and deliberately after the save: it returns as soon as the walk is handed to
+                // the loader, so nothing below it could depend on the load having finished.
+                LoadFolder(treeUri);
             }
             catch (Exception ex)
             {
-                Log.Error(LogTag, $"Failed to open folder {treeUri}: {ex}");
+                Log.Error(LogTag, $"Failed to open folder {treeUri}: {ex.GetType().Name}: {ex.Message}");
                 settings.LastCollection = previousCollection;
                 ResetLibrary();
 
-                // After ResetLibrary, not before: RenderLibrary writes empty_folder_text for an
-                // empty library, so the specific message has to land last or it is clobbered.
+                // After ResetLibrary, not before: RenderLibrary picks its caption from the state, so
+                // the specific message has to land last or it is clobbered.
                 emptyLabel.Text = GetString(Resource.String.folder_error_text);
                 emptyLabel.Visibility = ViewStates.Visible;
             }
@@ -610,8 +715,10 @@ namespace FigureDrawing
                 // well, and a walk that fails must not skip the refresh.
                 RefreshGrant(treeUri);
 
+                // The count is logged by the load itself when it lands: LoadFolder returns as soon
+                // as the walk is handed off, so reading library.Count here would report the pool
+                // from before it (FD-009).
                 LoadFolder(treeUri);
-                Log.Info(LogTag, $"Restored the remembered folder: {library.Count} images.");
             }
             catch (Exception error)
             {
@@ -655,42 +762,150 @@ namespace FigureDrawing
         // classification below can tell "remembered and unreachable" from "picked and empty".
         bool walkFailed;
 
-        // Builds the reference library for the picked tree (the recursive walk and the pool live in
-        // Core) and shows what it found. Any entry whose MIME type starts with "image/" is accepted
-        // (jpg/png/webp/gif/heic/...); the library maps each document id to the content uri a
-        // session draws from, so the pool needs no second pass here.
+        // Starts a load of the picked tree. Synchronous prologue only: it releases the old grid,
+        // decides whether the pool survives, paints the loading state, and hands off. The walk, the
+        // classification rules and the decodes are LibraryLoader's, off the UI thread; what lands
+        // afterwards is LoadFolderAsync's.
         void LoadFolder(Android.Net.Uri treeUri)
         {
             ClearThumbnails();
-            library = ReferenceLibrary.Empty;
+            walkFailed = false;
 
-            var rootDocumentId = DocumentsContract.GetTreeDocumentId(treeUri);
-            if (rootDocumentId is not null)
+            // Whether the pool survives is Core's comparison (LibraryLoadState), not the screen's:
+            // it is the "never a mixture" clause of INV-X-13 and a source-shape test cannot tell it
+            // from its own inverse. A re-walk of the folder already loaded keeps its pool, so
+            // returning from a session does not grey Start out for the length of the walk; the pool
+            // it keeps is the previous *complete* one and it is replaced whole.
+            if (!LibraryLoadState.KeepsPool(loadedTreeUri, treeUri.ToString()))
             {
-                var tree = new ContentResolverDocumentTree(ContentResolver!, treeUri);
-                library = new ReferenceLibrary(
-                    tree,
-                    rootDocumentId,
-                    treeUri.LastPathSegment,
-                    documentId =>
-                        DocumentsContract.BuildDocumentUriUsingTree(treeUri, documentId)?.ToString());
-
-                // Every image found is in the pool regardless of whether its preview decodes; the
-                // session handles any that turn out unreadable. The cap bounds decode ATTEMPTS, not
-                // successes — a folder of undecodable files must not cost one provider round trip
-                // per entry on the main thread.
-                foreach (var id in library.Pool.Take(MaxThumbnails))
-                {
-                    if (Android.Net.Uri.Parse(id) is { } fileUri)
-                        AddThumbnail(fileUri);
-                }
+                library = ReferenceLibrary.Empty;
+                loadedTreeUri = treeUri.ToString();
             }
 
+            // After the reset, not before: RenderLibrary captions an empty library as a folder with
+            // no images in it, so the loading caption has to land last or it is clobbered.
             RenderLibrary();
-
-            // A session needs images to run, so the Start gate opens only when the folder yielded at
-            // least one image (FD-002).
+            ShowLoading();
             UpdateStartState();
+
+            _ = LoadFolderAsync(treeUri);
+        }
+
+        // The load's tail, resumed on the main thread by the looper's SynchronizationContext once
+        // the walk and the decodes are done.
+        //
+        // It catches everything, because by this point there is no caller left to do it: the
+        // try/catch in OnActivityResult and RestoreLastFolder only ever covered the synchronous
+        // prologue above. An escape here lands on the looper unhandled — and on the restore path,
+        // which runs off a persisted uri, that would be a crash on every launch from then on
+        // (INV-X-11).
+        async Task LoadFolderAsync(Android.Net.Uri treeUri)
+        {
+            try
+            {
+                var loaded = await loader.LoadAsync(
+                    treeUri, MaxThumbnails, ThumbnailDimension, MaxThumbnailDimension);
+
+                // Superseded, stopped or destroyed while the walk was running. The loader has
+                // already recycled whatever it decoded; this load writes nothing (INV-X-13).
+                if (loaded is null)
+                    return;
+
+                // Re-checked here rather than trusting the loader's guard to have run in this same
+                // looper turn. It does today — the awaiter inlines when the captured context is the
+                // current one — but resting on that would mean a posted continuation could attach 24
+                // previews to a grid OnStop had just released, and they would sit there until the
+                // next stop. Structural beats a scheduling detail.
+                if (gridReleased)
+                {
+                    LibraryLoader.DiscardThumbnails(loaded.Thumbnails);
+                    return;
+                }
+
+                library = loaded.Library;
+                AttachThumbnails(loaded.Thumbnails);
+
+                RenderLibrary();
+
+                // A session needs images to run, so the Start gate opens only when the folder
+                // yielded at least one image (FD-002).
+                UpdateStartState();
+
+                Log.Info(LogTag, $"Loaded the folder: {library.Count} images.");
+            }
+            catch (Exception error)
+            {
+                // Type and message, not the whole exception: a SAF failure's message and stack can
+                // carry absolute paths and the ids of files *inside* the folder, which is more than
+                // the content uri §9 permits logging.
+                Log.Error(LogTag, $"Loading folder {treeUri} failed: {error.GetType().Name}: {error.Message}");
+
+                // The recovery is itself guarded. This task is discarded by its caller, so a throw
+                // from in here would be an unobserved fault: nothing crashes, nothing is logged, and
+                // the pane keeps the loading caption forever. A silent hang is as undefined an
+                // outcome as a throw (INV-X-11).
+                try
+                {
+                    // The walk failing is what LibraryStatus.Unavailable exists to say: the folder is
+                    // still remembered, it just could not be read.
+                    ShowRememberedFolderUnavailable();
+                }
+                catch (Exception recovery)
+                {
+                    Log.Error(LogTag, $"Reporting the failure also failed: {recovery.GetType().Name}");
+                }
+            }
+        }
+
+        // Hands the decoded previews to the grid, which owns them from here.
+        //
+        // The element type is nullable because null *is* the ownership state: a slot is cleared the
+        // moment its view takes the bitmap, so the discard below can never free pixels the grid is
+        // showing. Saying that in the type beats saying it in a comment over a `null!`.
+        void AttachThumbnails(List<Android.Graphics.Bitmap?> thumbnails)
+        {
+            try
+            {
+                for (var i = 0; i < thumbnails.Count; i++)
+                {
+                    if (thumbnails[i] is not { } bitmap)
+                        continue;
+
+                    try
+                    {
+                        AddThumbnail(bitmap);
+
+                        // Attached: the ImageView owns it now, so it must not be discarded below.
+                        thumbnails[i] = null;
+                    }
+                    catch (Exception error)
+                    {
+                        // One tile that will not attach — an out-of-memory on the view, not on the
+                        // decode — must cost that tile and nothing else.
+                        Log.Warn(LogTag, $"Skipping a preview tile: {error.Message}");
+                    }
+                }
+            }
+            finally
+            {
+                // Whatever no view took: the tiles that failed to attach, and the tail after a
+                // failure that stopped the loop. DiscardThumbnails skips the cleared slots.
+                LibraryLoader.DiscardThumbnails(thumbnails);
+            }
+        }
+
+        // The library pane while a folder is being read. Deliberately not a branch inside
+        // RenderLibrary: a folder still being walked is not a folder that turned out to be empty,
+        // and captioning it "No images found" is a different and wrong answer.
+        void ShowLoading()
+        {
+            emptyLabel.Text = GetString(Resource.String.library_loading_text);
+            emptyLabel.Visibility = ViewStates.Visible;
+
+            // "+N more not shown" counts the pool against what the grid is showing, and during a
+            // re-walk the grid is empty while the previous pool is still there — which would read as
+            // every image being hidden. It comes back when the previews land.
+            libraryMore.Visibility = ViewStates.Gone;
         }
 
         // What the pane says is decided in Core (LibraryStatus) and only mapped to a resource here:
@@ -759,6 +974,13 @@ namespace FigureDrawing
                     bitmap.Recycle();
 
                 bitmap?.Dispose();
+
+                // The view's own peers go too. Until FD-009 the grid was built once per launch and
+                // leaving these to a finalizer cost nothing; it is now rebuilt on every return to
+                // the screen, and an undisposed ImageView keeps its Java View — and through it this
+                // Activity — reachable until a managed GC plus finalizer pass (§8).
+                view.LayoutParameters?.Dispose();
+                view.Dispose();
             }
 
             imageContainer.RemoveAllViews();
@@ -771,30 +993,23 @@ namespace FigureDrawing
         // a pool the drawer was just told is gone.
         void ResetLibrary()
         {
+            // A load still in flight would otherwise repopulate the folder the artist was just told
+            // could not be opened — and its RenderLibrary would clobber the caption.
+            loader?.Abandon();
+
             ClearThumbnails();
             library = ReferenceLibrary.Empty;
+
+            // The pool is gone, so the folder it belonged to must not still match the next load —
+            // otherwise a re-pick of that same folder would "keep" a pool that no longer exists.
+            loadedTreeUri = null;
+
             RenderLibrary();
             UpdateStartState();
         }
 
-        void AddThumbnail(Android.Net.Uri uri)
+        void AddThumbnail(Android.Graphics.Bitmap bitmap)
         {
-            Android.Graphics.Bitmap? bitmap;
-            try
-            {
-                bitmap = ImageDecoding.DecodeSampledBitmap(
-                    ContentResolver!, uri, ThumbnailDimension, MaxThumbnailDimension);
-            }
-            catch (Exception ex)
-            {
-                // A single unreadable/oversized image must not sink the whole folder.
-                Log.Warn(LogTag, $"Skipping image {uri}: {ex.Message}");
-                return;
-            }
-
-            if (bitmap is null)
-                return;
-
             var margin = Resources!.GetDimensionPixelSize(Resource.Dimension.space_2);
             var layoutParams = new GridLayout.LayoutParams
             {
@@ -814,60 +1029,18 @@ namespace FigureDrawing
             imageView.ClipToOutline = true;
             imageView.SetImageBitmap(bitmap);
 
-            imageContainer.AddView(imageView);
-        }
-
-        // Adapts a Storage Access Framework tree (DocumentsContract + ContentResolver) to the
-        // IDocumentTree abstraction the pure enumerator walks.
-        sealed class ContentResolverDocumentTree(ContentResolver resolver, Android.Net.Uri treeUri)
-            : IDocumentTree
-        {
-            // A failed query yields nothing rather than throwing: the provider may be gone, the
-            // volume unmounted, or the grant revoked between the permission check and the walk, and
-            // the domain treats "no children" as an ordinary answer (INV-TREE-4, INV-GRP-5).
-            public IEnumerable<DocumentEntry> GetChildren(string parentDocumentId)
+            // A view that never makes it into the grid is freed here: ClearThumbnails only reaches
+            // attached children, so an AddView that throws would otherwise strand the peer — and the
+            // bitmap it is holding is freed by the caller's finally.
+            try
             {
-                var entries = new List<DocumentEntry>();
-
-                try
-                {
-                    var childrenUri =
-                        DocumentsContract.BuildChildDocumentsUriUsingTree(treeUri, parentDocumentId);
-
-                    ICursor? cursor = resolver.Query(
-                        childrenUri!,
-                        new[]
-                        {
-                            DocumentsContract.Document.ColumnDocumentId,
-                            DocumentsContract.Document.ColumnMimeType,
-                        },
-                        null, null, null);
-
-                    if (cursor is null)
-                        return entries;
-
-                    try
-                    {
-                        while (cursor.MoveToNext())
-                        {
-                            var documentId = cursor.GetString(0);
-                            if (documentId is null)
-                                continue;
-
-                            entries.Add(new DocumentEntry(documentId, cursor.GetString(1)));
-                        }
-                    }
-                    finally
-                    {
-                        cursor.Close();
-                    }
-                }
-                catch (Exception error)
-                {
-                    Log.Warn(LogTag, $"Listing {parentDocumentId} failed: {error.Message}");
-                }
-
-                return entries;
+                imageContainer.AddView(imageView);
+            }
+            catch
+            {
+                imageView.SetImageDrawable(null);
+                imageView.Dispose();
+                throw;
             }
         }
     }

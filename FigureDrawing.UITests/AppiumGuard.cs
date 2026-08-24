@@ -221,12 +221,26 @@ internal sealed class AppiumGuard(AndroidDriver driver)
 
         Assert.NotNull(WaitForId("pick_button", TimeSpan.FromSeconds(10)));
 
+        // Wait for the load to reach a terminal state whether or not a count was asked for. The walk
+        // is asynchronous since FD-009, so a caller that goes straight on to assert Start is enabled
+        // would otherwise race the load — Start is gated on the pool being non-empty.
+        //
+        // Keyed on the loading caption clearing, not on the count: the pool is deliberately retained
+        // across a re-walk of the same folder, so a count assertion is already satisfied before the
+        // new walk lands. The caption is present for exactly the duration of a load.
+        Assert.True(WaitForLoadToSettle(TimeSpan.FromSeconds(15)), "The picked folder never finished loading.");
+
         if (expectImages is not { } expected)
             return;
 
         if (expected == 0)
         {
-            Assert.NotNull(WaitForId("empty_label", TimeSpan.FromSeconds(10)));
+            // The label's *text*, not merely its presence: since FD-009 the same view carries the
+            // loading caption while the folder is being read, so waiting for the view alone would
+            // pass the instant the walk started and stop asserting anything about the outcome.
+            Assert.True(
+                WaitForEmptyFolderMessage(TimeSpan.FromSeconds(15)),
+                "The empty folder never reported that it holds no images.");
             return;
         }
 
@@ -250,6 +264,66 @@ internal sealed class AppiumGuard(AndroidDriver driver)
         try { Driver.FindElement(by).Click(); }
         catch (WebDriverException e) { Console.WriteLine($"'{fullId}' vanished: {e.Message.Split('\n')[0]}"); }
     }
+
+    // Waits for the library pane to settle on "this folder holds no images", as opposed to the
+    // loading caption the same label shows while the walk is running (FD-009). The expected wording
+    // is owned by UiTestEnvironment so a copy edit in strings.xml has one place to be reflected.
+    public bool WaitForEmptyFolderMessage(TimeSpan timeout) =>
+        WaitUntil(_ => EmptyLabelText().Contains(
+            UiTestEnvironment.EmptyFolderMessage, StringComparison.OrdinalIgnoreCase), timeout);
+
+    // The empty-state label's current text, or "" when it is not on screen (it is View.Gone once a
+    // folder has loaded images, so it drops out of the hierarchy).
+    public string EmptyLabelText()
+    {
+        var labels = Probe(() => Driver.FindElements(MobileBy.Id(UiTestEnvironment.ViewId("empty_label"))));
+        return labels.Count == 0 ? string.Empty : labels[0].Text ?? string.Empty;
+    }
+
+    // Waits for the library pane to report exactly this many images. The load is asynchronous since
+    // FD-009, so every assertion about the pool has to be a wait rather than a point read.
+    public bool WaitForLibraryCount(int expected, TimeSpan timeout) =>
+        WaitUntil(_ => LibraryCount() == expected, timeout);
+
+    // Waits for a load to finish, in whichever way it finishes: the loading caption is on screen for
+    // exactly as long as the walk and the decodes are running, so its absence is the one signal that
+    // means "settled" for a folder with images, an empty folder, and a folder that failed alike.
+    public bool WaitForLoadToSettle(TimeSpan timeout)
+    {
+        // Two-sided. "Not loading" is also true *before* a load starts — the label is absent, or
+        // still carries the first-run prompt — so waiting only for the caption to clear can return
+        // before the walk has even begun. Wait for it to appear first; if it never does, the load
+        // was already over by the time we looked, which is equally settled.
+        WaitUntil(_ => IsLoading(), TimeSpan.FromSeconds(2));
+
+        return WaitUntil(_ => !IsLoading(), timeout);
+    }
+
+    bool IsLoading() =>
+        EmptyLabelText().Contains(UiTestEnvironment.LoadingMessage, StringComparison.OrdinalIgnoreCase);
+
+    // Waits until the named Activity is in front. Used to prove a test actually navigated before it
+    // navigates back — asserting the destination is what makes the return trip meaningful.
+    public bool WaitForActivity(string activityName, TimeSpan timeout) =>
+        WaitUntil(d => (d.CurrentActivity ?? string.Empty)
+            .Contains(activityName, StringComparison.Ordinal), timeout);
+
+    // How many preview tiles the reference grid is actually showing. Distinct from LibraryCount,
+    // which reads the pool's size: since FD-009 the pool can be populated while the grid is empty
+    // (released on stop, rebuilt on start), and telling those apart is the point.
+    //
+    // Counted structurally — ImageViews inside image_container — rather than by content description.
+    // The description comes from a string resource, so keying off it would make this assertion fail
+    // for a reason that has nothing to do with the grid.
+    public int ThumbnailCount() =>
+        Probe(() => Driver.FindElements(MobileBy.XPath(
+            $"//*[@resource-id='{UiTestEnvironment.ViewId("image_container")}']" +
+            "/android.widget.ImageView")).Count);
+
+    // Deliberately "any", not a count: the grid scrolls, and UiAutomator reports only what is on
+    // screen, so an exact count is a function of the device profile rather than of the app.
+    public bool WaitForAnyThumbnail(TimeSpan timeout) =>
+        WaitUntil(_ => ThumbnailCount() > 0, timeout);
 
     // The number the library pane is showing, or -1 when it shows nothing yet. The label's wording
     // belongs to strings.xml ("{0} images ready" today), so the digits are found wherever they sit

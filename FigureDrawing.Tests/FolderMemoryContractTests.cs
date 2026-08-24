@@ -16,6 +16,8 @@ namespace FigureDrawing.Tests;
 // or a reformat must not fail a build that still behaves.
 public class FolderMemoryContractTests
 {
+    // MainActivity as text, comments and literals blanked. The machinery lives in SourceContract,
+    // shared with the other suites that read an Activity as a file.
     static readonly SourceContract Activity = new("MainActivity.cs");
 
     static string Source => Activity.Text;
@@ -68,18 +70,25 @@ public class FolderMemoryContractTests
         var assignment = Regex.Match(body, @"settings\.LastCollection\s*=");
         Assert.True(assignment.Success, "The picked folder is no longer written to Settings.LastCollection.");
 
-        // LoadFolder must appear between the assignment and the save: the save is conditional on a
-        // successful load (FD-013), so the folder is only persisted when it can actually be opened.
+        // The folder is proved openable BEFORE it is written down. FD-013's rule was "save only
+        // after a successful load", enforced by putting LoadFolder between the assignment and the
+        // save. FD-009 made the load asynchronous, so LoadFolder returns before the walk lands and
+        // that ordering would pass while guaranteeing nothing — the save has to be gated on
+        // something that has actually happened by the time it runs.
+        //
+        // GetTreeDocumentId is that something: a tree this app cannot open has no document id, and
+        // it is checked, synchronously, above the assignment.
+        var validated = body.IndexOf("GetTreeDocumentId(", StringComparison.Ordinal);
+        Assert.True(validated >= 0, "The picked tree is no longer validated before it is remembered.");
+        Assert.True(validated < assignment.Index, "The tree must be validated before LastCollection is written.");
+
         var afterAssignment = body[assignment.Index..];
-        var loadIndex = afterAssignment.IndexOf("LoadFolder(", StringComparison.Ordinal);
-        Assert.True(loadIndex >= 0, "LoadFolder is no longer called after the LastCollection assignment.");
+        var saveIndex = afterAssignment.IndexOf("settings.Save();", StringComparison.Ordinal);
+        Assert.True(saveIndex >= 0, "The picked folder is no longer checkpointed to the database.");
 
-        // No save before the load — a duplicate save before LoadFolder reintroduces FD-013.
-        var beforeLoad = afterAssignment[..loadIndex];
-        Assert.DoesNotContain("settings.Save()", beforeLoad, StringComparison.Ordinal);
-
-        var afterLoad = afterAssignment[loadIndex..];
-        Assert.Contains("settings.Save();", afterLoad, StringComparison.Ordinal);
+        // Nothing between the assignment and the save may defer: the whole point of validating up
+        // front is that no continuation stands between picking a folder and its being durable.
+        Assert.DoesNotMatch(@"(?<!\w)await\s", afterAssignment[..saveIndex]);
     }
 
     // Only the root's identity is persisted, never its contents (INV-GRP-1): the pool is re-walked
@@ -116,11 +125,28 @@ public class FolderMemoryContractTests
         Assert.Contains("LibraryReference.TryParse", MethodBody("RememberedTree"), StringComparison.Ordinal);
         Assert.Contains("LibraryReference.HasReadGrant", MethodBody("RestoreLastFolder"), StringComparison.Ordinal);
         Assert.Contains("PersistedUriPermissions", MethodBody("PersistedGrants"), StringComparison.Ordinal);
+
+        // Enumerating the platform's grants is a binder call into the system server, and since
+        // FD-009 the restore runs on every return to the screen rather than once per launch — so an
+        // escape here would be a crash on every foreground, off a reference that is persisted
+        // (INV-X-11, INV-GRP-5). The grant check has to sit inside the try that reports it.
+        var restore = MethodBody("RestoreLastFolder");
+        var caught = restore.IndexOf("catch (Exception", StringComparison.Ordinal);
+
+        Assert.True(caught >= 0, "Restoring no longer survives a platform failure.");
+        Assert.True(
+            restore.IndexOf("HasReadGrant", StringComparison.Ordinal) < caught,
+            "The grant check must be inside the try that catches a failed restore.");
+        Assert.Contains("ShowRememberedFolderUnavailable();", restore[caught..], StringComparison.Ordinal);
     }
 
     // A remembered folder whose grant has since been revoked (permission cleared, volume unmounted,
     // provider uninstalled) must leave the empty state showing, not throw on every launch from then
     // on — the stale uri is persisted, so an escape here reproduces forever (INV-GRP-5).
+    //
+    // Since FD-009 this catch covers only LoadFolder's synchronous prologue: the walk itself fails
+    // on the looper, inside LoadFolderAsync. The asynchronous half of this invariant is pinned by
+    // LibraryLoadContractTests.TheLoadsTail_CatchesItsOwnFailures.
     [Fact]
     public void Restoring_ChecksTheGrantAndSurvivesAFailure()
     {

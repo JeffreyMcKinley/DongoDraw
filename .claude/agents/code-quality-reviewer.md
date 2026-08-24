@@ -60,8 +60,13 @@ Read surrounding context from unchanged files as needed, but do not report findi
   sanctioned exception, the player screen's fire-and-forget decode continuations (`BuildSession`,
   `DecodeAhead`), which nothing awaits and whose whole bodies are wrapped so nothing escapes to the
   looper (ARCHITECTURE.md §7)
-- `ConfigureAwait` and UI-thread affinity: Android UI mutations must happen on the main thread (`RunOnUiThread`)
-- Activity/Fragment lifecycle correctness — state saved in `OnSaveInstanceState`, resources released in `OnPause`/`OnDestroy`
+- UI-thread affinity: Android UI mutations must happen on the main thread — but a method that already
+  resumes on the main-looper `SynchronizationContext` after an `await` must NOT wrap its continuation
+  in a redundant `RunOnUiThread`, and never `ConfigureAwait(false)` in an Activity (ARCHITECTURE.md §7)
+- Activity/Fragment lifecycle correctness — state saved in `OnSaveInstanceState`; resources released
+  in `OnPause`/`OnStop`/`OnDestroy` as the resource requires. View-held bitmaps in `MainActivity`'s
+  reference grid are released in `OnStop`, because the screen is stopped and not destroyed while a
+  session runs (ARCHITECTURE.md §8)
 - `IDisposable` honored with `using`, especially for `Bitmap`, streams, and LiteDB connections
 - Event handler subscriptions unsubscribed to avoid leaks
 - Resource IDs and layout bindings match `Resources/layout/*.xml`
@@ -86,8 +91,8 @@ a layering scheme the project has not adopted.
   *Presentation* — `MainActivity`, `SessionActivity`, layouts. *Application* — use-case
   orchestration; `DrawingSession<TImage>` in Core, the rest currently inside the Activities.
   *Domain* — `DrawingSession`, `DrawingSession<TImage>`, `SessionSetup`, `ReferenceLibrary`, and the
-  value objects. *Infrastructure* — `Settings` (LiteDB), `ContentResolverDocumentTree` (SAF),
-  `ImageDecoding` (BitmapFactory). There is **no ViewModel or translation layer**: screens call
+  value objects. *Infrastructure* — `Settings` (LiteDB), `LibraryLoader` + its `ContentResolverDocumentTree`
+  (SAF, off the UI thread), `ImageDecoding` (BitmapFactory). There is **no ViewModel or translation layer**: screens call
   Core types directly, and that is the intended shape at this size. Introducing a presenter layer
   is a design decision, not a drive-by refactor — flag it if a change smuggles one in.
 - **Project boundaries**: `FigureDrawing.Core` holds the domain and its data access and must never
@@ -124,16 +129,21 @@ a layering scheme the project has not adopted.
   stamps the id, callers never do. New preferences are new defaulted properties on `Settings`,
   not a second document or collection. No BSON or LiteDB vocabulary above the store.
 - **Threading model**: Core is synchronous by design and nothing in the domain sleeps, posts,
-  schedules, or starts a thread (`INV-X-9`). All background work belongs to the player screen, which
-  decodes reference images off the UI thread — the session's construction and the next pose while
-  the current one is up. Everything else runs on the main thread. Android UI objects are touched on
-  the main thread only; the repaint loop uses `Handler(Looper.MainLooper)` and posts/removes **one
-  stored `Java.Lang.IRunnable`** — a callback posted as an `Action` and expected to be removable is
-  a Critical leak. Countdown time comes from a monotonic clock, never from counting ticks
-  (`INV-CD-1`). Background work is marshalled back through the `await` continuation (which the
-  synchronization context posts to the same main looper — never `ConfigureAwait(false)` in an
-  Activity), is abandoned in `OnPause`/`OnDestroy`, and holds one decode slot at a time. See
-  ARCHITECTURE.md §7, which is authoritative.
+  schedules, or starts a thread (`INV-X-9`). Two pieces of background work exist: the player screen
+  decodes reference images off the UI thread (the session's construction, and the next pose while
+  the current one is up), and `LibraryLoader` reads a reference library off it. Everything else runs
+  on the main thread. Android UI objects are touched on the main thread only; the repaint loop uses
+  `Handler(Looper.MainLooper)` and posts/removes **one stored `Java.Lang.IRunnable`** — a callback
+  posted as an `Action` and expected to be removable is a Critical leak. Countdown time comes from a
+  monotonic clock, never from counting ticks (`INV-CD-1`). Background work is marshalled back through
+  the `await` continuation (which the synchronization context posts to the same main looper — never
+  `ConfigureAwait(false)` in an Activity, and no redundant `RunOnUiThread`), is never blocked on with
+  `.Result`/`.Wait()`, and is abandoned by a generation counter compared after the await. *Where*
+  it is abandoned is per-feature and must be argued, not copied: the player prefetch at
+  `OnPause`/`OnDestroy`, the library load at `OnStop`/`OnDestroy` and wherever the screen
+  deliberately drops what it is showing (`ResetLibrary`) but never `OnPause`, since a briefly
+  backgrounded app must not come back to an empty library (`INV-X-13`). See ARCHITECTURE.md §7,
+  which is authoritative.
 - **Forbidden** — each of these is an architecture violation, not a style opinion:
   - A rule, calculation, or state machine implemented inside an Activity
   - `Android.*` / `Java.*` referenced from `FigureDrawing.Core`

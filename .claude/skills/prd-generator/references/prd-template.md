@@ -25,7 +25,7 @@ in what the session counts, what persists.
 | Session Execution | |
 | Preferences | |
 
-**Object catalogue.** Does this stay at nine objects? If it adds one, justify against
+**Object catalogue.** Does this stay at ten objects? If it adds one, justify against
 [DOMAIN-MODEL.md §9](../../../../docs/DOMAIN-MODEL.md) — what rule has no existing owner, and why
 absorbing it into a neighbour is worse.
 

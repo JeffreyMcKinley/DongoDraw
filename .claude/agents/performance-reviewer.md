@@ -30,11 +30,12 @@ The three costs that are real here:
 2. **The repaint loop.** `SessionActivity` ticks every 200 ms for the whole session. Per-tick
    allocation, per-tick string formatting beyond the countdown's own, and per-tick work that could
    be hoisted all matter here in a way they do not elsewhere in this codebase.
-3. **The preview list.** `MainActivity` decodes and stacks every image in a folder into a
-   `ScrollView` — linear in folder size with no recycling. Known and accepted at MVP scale; do not
-   re-report it as new, but treat any change that widens it (larger bound, more per-image work,
-   more retained bitmaps) as a finding, and note recycling as the fix when the folder size the app
-   targets grows.
+3. **The preview grid.** `LibraryLoader` walks the folder and decodes previews off the UI thread,
+   bounded at `MaxThumbnails = 24` decode *attempts* (not successes, and never the whole folder);
+   `MainActivity` attaches them and releases them in `OnStop`, so they are not resident under a
+   session. The walk itself is still linear in folder size and re-runs on every `OnStart`. Known and
+   accepted at MVP scale; do not re-report it as new, but treat any change that widens it (a larger
+   bound, more per-image work, more retained bitmaps, concurrent decodes) as a finding.
 
 **Architecture and domain constraints on your fixes**
 
@@ -52,8 +53,10 @@ not an optimization:
 - **Countdown time comes from a monotonic clock, never from counting ticks** (`INV-CD-1`).
   Lengthening the tick interval is a legitimate optimization precisely because accuracy does not
   depend on it; replacing the clock read with an accumulator is a correctness regression.
-- **Background work, if introduced**, lives in the Android layer, marshals back through the
-  main-looper `Handler`, and is cancelled in `OnPause`/`OnDestroy` (`docs/ARCHITECTURE.md` §7).
+- **Background work** lives in the Android layer and follows the shape in `docs/ARCHITECTURE.md`
+  §7: one `async Task` wrapping one `Task.Run` over a `static` worker, results resuming on the
+  main-looper `SynchronizationContext` (not a hand-rolled `Handler` post), never blocked on, and
+  abandonable by generation counter at the lifecycle boundary §7 names for that work.
 - **The repaint callback is one stored `Java.Lang.IRunnable`**, not an `Action` — posting an
   `Action` makes `RemoveCallbacks` silently fail and leaks ticks past teardown.
 - Do not trade away a unit-testable Core rule for speed. A rule pushed into an Activity to avoid an
@@ -73,14 +76,17 @@ not an optimization:
 - Image pipeline: `BitmapFactory.Options.InSampleSize` used for downsampling, bitmaps recycled or disposed, no full-resolution decode for a thumbnail
 - Allocation in hot paths — `OnDraw`, `OnMeasure`, scroll callbacks, per-frame timer ticks — should be zero or near-zero
 - Layout depth and nested weights that force multiple measure passes
-- `Handler`/`Timer`/coroutine cancellation on lifecycle teardown; no work continuing after `OnPause`
+- `Handler`/`Timer` cancellation on lifecycle teardown, and background work abandoned at the
+  boundary §7 names for it — `OnStop`/`OnDestroy` for the library load, deliberately never
+  `OnPause`, since a briefly backgrounded app must not come back to an empty library
 - Battery and wakelock cost of long-running session timers
 
 **I/O and Query Efficiency**
 
 - Folder enumeration is the app's real I/O: a depth-first `ContentResolver.Query` per directory,
   with a `Cursor` closed in a `finally`. Watch for a query per *file*, an unclosed cursor, or a
-  re-enumeration triggered on every render rather than on folder change
+  re-walk triggered more often than once per foreground (since FD-009 the walk deliberately re-runs
+  on every `OnStart` — see ARCHITECTURE.md §8)
 - Group membership is re-derived rather than cached, by design (`INV-GRP-1`). Propose memoizing it
   only within a single load, never as persisted state
 - LiteDB access is one document read per screen and a write at named moments (`INV-SET-P4`) — folder

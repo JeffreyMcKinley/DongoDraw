@@ -99,7 +99,12 @@ public class FolderPickerUiTests(AppiumAppFixture app, ITestOutputHelper output)
         g.SelectDefaultFolder(expectImages: 0);
 
         AssertAppAlive(g);
-        Assert.Contains("No images found", g.FindById("empty_label").Text, StringComparison.OrdinalIgnoreCase);
+
+        // A wait, not a point read: the folder is walked off the UI thread since FD-009, and the
+        // same label carries the loading caption until that finishes.
+        Assert.True(
+            g.WaitForEmptyFolderMessage(TimeSpan.FromSeconds(15)),
+            $"Expected the empty-folder message, got \"{g.EmptyLabelText()}\".");
     }
 
     // The app must survive selecting a folder that CONTAINS images (the case that used to OOM /
@@ -114,8 +119,12 @@ public class FolderPickerUiTests(AppiumAppFixture app, ITestOutputHelper output)
         g.SelectDefaultFolder(expectImages: 5);
 
         AssertAppAlive(g);
-        // empty_label is set to View.Gone when images load, so it drops out of the tree.
-        Assert.Empty(g.FindAllById("empty_label"));
+
+        // empty_label is set to View.Gone when images load, so it drops out of the tree — but only
+        // once the asynchronous walk lands, so this waits rather than reading once.
+        Assert.True(
+            g.WaitUntil(_ => g.FindAllById("empty_label").Count == 0, TimeSpan.FromSeconds(15)),
+            $"The empty-state label is still showing: \"{g.EmptyLabelText()}\".");
     }
 
     // The picked folder is remembered across launches (Settings.LastCollection + the persisted uri
@@ -142,8 +151,13 @@ public class FolderPickerUiTests(AppiumAppFixture app, ITestOutputHelper output)
         g.OpenTab("tab_images");
 
         AssertAppAlive(g);
+
+        // The restore is off the UI thread now, so it is not necessarily finished by the time the
+        // tab is clickable — which is the whole point of FD-009 and why this waits.
+        Assert.True(
+            g.WaitForLibraryCount(7, TimeSpan.FromSeconds(15)),
+            $"Restored library reported {g.LibraryCount()} images, expected 7.");
         Assert.Empty(g.FindAllById("empty_label"));
-        Assert.Equal(7, g.LibraryCount());
     }
 
     // The way a person actually closes the app: Back out of MainActivity, which finishes the
@@ -233,6 +247,64 @@ public class FolderPickerUiTests(AppiumAppFixture app, ITestOutputHelper output)
 
         g.ReturnToMainScreen();
         Assert.True(inside, $"Picker did not open inside '{folder}' — {listing}.");
+    }
+
+    // FD-009: the grid is released in OnStop and rebuilt in OnStart, so the player's decodes are not
+    // stacked on top of the library's 24 previews. The risk that buys is the one asserted here — get
+    // the rebuild wrong and every return from a session shows an empty grid, which is worse than the
+    // resident memory it fixes.
+    [Fact]
+    public void ReturningFromASession_RebuildsTheGridAndPicksUpNewImages()
+    {
+        if (Ready() is not { } g) return;
+
+        UiTestEnvironment.SeedDefaultFolder(imageCount: 7);
+        g.SelectDefaultFolder(expectImages: 7);
+
+        g.OpenTab("tab_session");
+        g.FindById("chip_break_0").Click();
+        Assert.True(g.FindById("start_button").Enabled, "Start should be enabled after selecting images.");
+        g.FindById("start_button").Click();
+
+        // Two images dropped in while the artist is on the player screen — the same stop/start this
+        // test already pays for is what re-derives the pool (INV-GRP-1), so both facts are asserted
+        // from one session round trip rather than two.
+
+        // Assert we actually reached the player before going back. Without this the test can pass
+        // having never left MainActivity — ReturnToMainScreen exits immediately if the player has
+        // not been resumed yet — and OnStop/OnStart, the whole point here, would never run.
+        Assert.True(
+            g.WaitForActivity("SessionActivity", TimeSpan.FromSeconds(15)),
+            "The session never started, so MainActivity was never stopped.");
+
+        UiTestEnvironment.AddImagesToDefaultFolder(firstIndex: 7, count: 2);
+
+        // Back to MainActivity, which was stopped rather than destroyed while the player ran.
+        g.ReturnToMainScreen();
+        g.OpenTab("tab_images");
+
+        AssertAppAlive(g);
+
+        // Membership is derived, never stored (INV-GRP-1): the return re-walks the folder, so files
+        // added while away are in the pool without the artist re-picking it.
+        Assert.True(
+            g.WaitForLibraryCount(9, TimeSpan.FromSeconds(20)),
+            $"The re-walk reported {g.LibraryCount()} images, expected the 7 seeded plus 2 added.");
+
+        // The GRID, not the count: a re-walk of the same folder deliberately keeps the previous
+        // pool, so library_count reads "7 images ready" from the moment OnStart runs and would pass
+        // over a grid that was released and never rebuilt — the exact failure this test exists for.
+        //
+        // Non-empty rather than exactly seven: the grid scrolls and UiAutomator only reports what is
+        // on screen, so seven tiles are four rows on the phone profile and two on the fold. The
+        // failure this guards against is an EMPTY grid, and that is what is asserted.
+        Assert.True(
+            g.WaitForAnyThumbnail(TimeSpan.FromSeconds(15)),
+            "The grid was released on stop and never rebuilt — no preview tiles are showing.");
+
+        Assert.True(
+            g.WaitUntil(_ => g.FindAllById("empty_label").Count == 0, TimeSpan.FromSeconds(15)),
+            $"The empty-state label is still showing: \"{g.EmptyLabelText()}\".");
     }
 
     // Proves the app did not crash: it is foregrounded and its main view still resolves.
