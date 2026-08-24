@@ -4,7 +4,7 @@ How this codebase is organized and the rules changes must hold to. Written for a
 contributors reviewing or extending the app. Product scope lives in the root [README](../README.md);
 planned work lives in [docs/prds](prds/README.md).
 
-> Derived from the code as of FD-005. Where a rule below is marked **(confirm)** it was inferred
+> Derived from the code as of FD-009. Where a rule below is marked **(confirm)** it was inferred
 > from existing code rather than stated anywhere — correct it if the intent differs.
 
 ## 1. The one rule
@@ -63,11 +63,20 @@ project means adding a fourth exclude.
 | `LibraryReference` / `PersistedGrant` | Whether the remembered folder is still worth acting on, and whether its read grant is still held |
 | `BitmapMath` | Power-of-two sub-sample calculation |
 | `GridContrast` | Which tone each rule-of-thirds guide takes from the pose under it |
+| `LoadGeneration` | Which piece of background work may still publish its result (`INV-X-13`) |
+| `LibraryLoadState` | Whether a re-walk may keep the pool the screen is already showing |
 | `Data/Settings` | The persisted settings document and its LiteDB store |
 
 Ten catalogued objects, nine of them Core types today (`SessionRecord` is still proposed),
 deliberately: what each one is and why the neighbours it absorbed are not
 separate concepts is [DOMAIN-MODEL.md §1](DOMAIN-MODEL.md) and [§9](DOMAIN-MODEL.md#9-consolidation).
+
+`BitmapMath`, `GridContrast`, `LoadGeneration` and `LibraryLoadState` are **not** among those ten and
+are not in the catalogue ([DOMAIN-MODEL.md §1](DOMAIN-MODEL.md)): they hold no domain rule and name
+nothing in the ubiquitous language. They are supporting types (§16) that live here because Core is
+where a thing becomes testable. Note `LoadGeneration` is deterministic and Android-free but *not*
+stateless — it is the app's one piece of shared cross-thread state. That is the admission criterion:
+Android-free and executable by a test, not "stateless".
 
 Core types are deterministic and side-effect free apart from `Settings`. They expose state as
 properties for the screen to read (`CurrentImage`, `Remaining`, `IsComplete`, `Display`) and accept
@@ -75,13 +84,14 @@ commands as methods (`Next`, `Skip`, `End`, `Tick`, `Pause`, `Resume`). Starting
 running constructor, not a command — there is no public `Start` and no public `Restart`; restarting
 the clock is internal (`RestartCountdown`).
 
-### Android — screens only
+### Android — screens and their adapters
 
 | Type | Owns |
 |---|---|
 | `MainActivity` | The three tabbed panes: setup inputs, the reference library + folder picker (SAF), settings |
 | `SessionActivity` | The player screen: pose, rail, break/pause overlays, summary, the repaint loop, lifecycle |
 | `ImageDecoding` | Two-pass `BitmapFactory` decode shared by both screens |
+| `LibraryLoader` / `LibraryLoad` | Not a screen: reads a reference library off the UI thread — the SAF walk, the preview decodes, the SAF adapter, and the guard that discards a superseded load (`INV-X-13`) |
 
 The look is the **Nocturne** design system, imported from the Claude Design project *Figure Drawing
 Practice App*. Its tokens live in `Resources/values/colors.xml` + `dimens.xml`, and its component
@@ -116,7 +126,7 @@ recognises that shape and never constructs, resolves, or queries one; `Documents
 `ContentResolver`, `Cursor` and `Uri` still stop at the adapter.
 
 **Interface adapter.** `IDocumentTree` describes "list the children of a folder document".
-`MainActivity.ContentResolverDocumentTree` backs it with `DocumentsContract` + `ContentResolver`;
+`LibraryLoader.ContentResolverDocumentTree` backs it with `DocumentsContract` + `ContentResolver`;
 tests back it with an in-memory tree.
 
 **Injected delegate.** `DrawingSession<TImage>` takes `Func<string, TImage?> load`. The screen
@@ -171,15 +181,17 @@ under test.
 
 ## 7. Threading
 
-- Core is synchronous by design and never threads, sleeps or posts (`INV-X-9`). All background work
-  in the app belongs to the player screen, which decodes reference images off the UI thread: the
-  session's own construction (`BuildSession`, which resolves the first pose) and the next pose while
-  the current one is up (`PrefetchUpcoming` / `DecodeAhead`). Everything else runs on the main
-  thread.
+- Core is synchronous by design and never threads, sleeps or posts (`INV-X-9`). Two screens do
+  background work, and nothing else does. The player decodes reference images off the UI thread —
+  the session's own construction (`BuildSession`, which resolves the first pose) and the next pose
+  while the current one is up (`PrefetchUpcoming` / `DecodeAhead`). The setup screen reads a
+  reference library off it (`LibraryLoader`): the folder walk and up to 24 preview decodes.
+  Everything else runs on the main thread.
 - **One decode at a time per screen.** The prefetch holds a single slot (`prefetchTask`), and a
   request while it is occupied is dropped rather than queued — the slot re-aims itself when the
   decode settles. Without that bound, every command that changes which image is next starts another
-  decode, and a few quick taps put several full-size decodes in flight at once.
+  decode, and a few quick taps put several full-size decodes in flight at once. The library load has
+  the same property by a different route: one load runs at a time and a newer one supersedes it.
 - A boundary that arrives before the decode finishes **waits for it** rather than starting a second
   one. Blocking the main thread on a `Task.Run` that captured no synchronization context cannot
   deadlock, and the wait is bounded by what is left of a decode already in progress.
@@ -190,24 +202,62 @@ under test.
   would survive teardown. Keep the stored-runnable pattern.
 - Countdown time comes from a monotonic clock, never from counting ticks. A slow or dropped repaint
   must not change how much time a pose gets.
-- Background work belongs behind an `async` method in the Android layer, and must be abandoned in
-  `OnPause` and `OnDestroy`. `SessionActivity.PrefetchUpcoming` / `DecodeAhead` / `CancelPrefetch`
-  are the worked example.
+
+**The shape for background work.** `SessionActivity.PrefetchUpcoming` / `DecodeAhead` /
+`CancelPrefetch` and `LibraryLoader` are the two worked examples; a third piece of background work
+follows this or argues why not.
+
+- One `async Task` method in the Android layer wrapping **one** `Task.Run`. Never `async void`: an
+  exception after the first await in an `async void` is rethrown on the looper and kills the process,
+  which §9 forbids at a boundary.
+- The worker `Task.Run` calls is a **`static`** method taking everything it needs as parameters, and
+  the delegate handed to `Task.Run` may capture only the owning helper — never an Activity. That is
+  what makes "the background thread cannot touch a view or `Settings`" structural rather than a
+  review comment. The subtle half is the `ContentResolver`: take it from `ApplicationContext`, since
+  an Activity's resolver reaches back to the Activity through its `ContextImpl` and would pin a
+  destroyed screen's whole view tree for the length of the work.
+- Results marshal back on the main-looper `SynchronizationContext`, which is what `await` resumes on
+  — the same main *looper* the repaint loop posts through, though not the same `Handler`. Do not add
+  a redundant `RunOnUiThread` inside a method that already resumes there.
+- **Never block on it.** `.Result` / `.Wait()` against the main-looper context deadlocks, and would
+  restore the freeze the work exists to remove.
+- Work in flight is **abandonable**: an `int` generation taken on the way out and re-checked on the
+  way back in, so only the most recent result may be written (`INV-X-13`). A `CancellationTokenSource`
+  buys nothing here — nothing on the path is a cancellation-aware API, so every check is an ordinary
+  `if` — and costs a disposal puzzle. Anything the abandoned work allocated is freed on that branch:
+  cancelling frees nothing by itself, it only says which branch to take.
+- Abandon in `OnStop` and `OnDestroy`, and wherever the screen deliberately drops the work it is
+  showing (`MainActivity.ResetLibrary`). `OnStop` matters as much as `OnDestroy`: a result landing
+  after the screen released its resources would put them straight back.
+- **Where the boundary sits is per-feature, and must be argued.** The library load abandons at
+  `OnStop`, never `OnPause`, because a briefly backgrounded app (a notification shade, a permission
+  dialog) must not come back to an empty library. Work whose result is worthless the moment the
+  screen stops being visible — a pose prefetch, say — may abandon earlier. State the reason wherever
+  the choice is made; do not copy this one by default.
+- Everything after the await catches its own failures — including the recovery path, since the task
+  is discarded by its caller and an escape there would fault unobserved, leaving the screen mid-load
+  with nothing logged. By then no caller is left to catch anything: the try/catch around the call
+  site only ever covered the synchronous prologue.
+- **Abandoning is a publish gate, not an interrupt.** It decides whether a result may be written; it
+  cannot unblock a call already in flight, so a provider that never answers parks a pool thread
+  until it does. The screen stays responsive, which is the property that matters — but do not read
+  the abandonment rule as a guarantee that the work has stopped.
 - **The stored-runnable rule above is about the repeating repaint queue, not about every callback.**
   A one-shot background result comes back through the `await` continuation, which Android's
   synchronization context posts to the same main looper. That continuation is deliberately *not*
   removable, and must not be made so: it is the code that frees a bitmap nobody wants any more, so a
   `RemoveCallbacks` that succeeded would strand the pixels with nothing left to release them. What
-  makes it safe instead is a generation counter compared after the `await` — a result that lost its
-  race is recycled rather than kept.
+  makes it safe instead is the generation counter compared after the `await`.
 - **Never `ConfigureAwait(false)` in an Activity.** The continuation touches views and the fields
   that own bitmaps; resuming it on a pool thread makes every one of those a race. It is also the
   memory barrier that publishes decoded pixels to the thread that attaches them.
 - A decode already running cannot be stopped, so "cancel" means "abandon the result", not "abort the
-  work". A `CancellationToken` still earns its place: it drops work that has not started, and
-  `ImageDecoding.DecodeSampledBitmap` checks it between its bounds pass and its decode pass, which is
-  where the multi-megabyte allocation begins. Abandoning must not clear the slot — the work is still
-  running, and a free slot would let the next repaint start a second decode beside it.
+  work". A `CancellationToken` still earns its place where the work has not started:
+  `ImageDecoding.DecodeSampledBitmap` checks one between its bounds pass and its decode pass, which
+  is where the multi-megabyte allocation begins. The player passes one; the library load bounds the
+  same cost by checking its generation per cursor row and per image instead. Abandoning must not
+  clear the prefetch slot — the work is still running, and a free slot would let the next repaint
+  start a second decode beside it.
 - The whole body of an `async void` method is wrapped, not just the `await`. What follows the await
   is JNI calls on peers that teardown may already have disposed, and an exception escaping there
   lands on the main looper with nothing above it to catch (`INV-X-11`).
@@ -234,12 +284,25 @@ under test.
   slop, so budget from twice the nominal dimension (a 4000x4000 photo decodes to 2000x2000); a
   12000x900 panorama decodes at 1500x112 rather than at full width. Never decode unsampled — a
   folder of real photos will exhaust memory.
-- A screen owns the bitmaps it decoded: repointing an `ImageView` recycles the one it replaces, and
-  `OnDestroy` detaches and frees whatever is still attached. The player screen has a **second**
-  owner — the one-entry prefetch cache, holding a pose nothing has attached yet — freed on every way
-  out of the screen, plus a third transient one in a decode whose result arrived too late to want.
-  Its steady-state peak is therefore two full-size poses, not one, which is part of what the decode
-  bound below is budgeted against. A JNI global ref keeps a Bitmap alive
+- **The reference grid's previews are released in `OnStop` and rebuilt in `OnStart`**, not held to
+  `OnDestroy`. `MainActivity` is *stopped*, not destroyed, while `SessionActivity` runs, so previews
+  held any longer would sit under every session and the app's real peak would be the grid plus the
+  pose plus the pose being decoded. This is affordable only because the rebuild is off the UI thread
+  (§7), and it depends on `SessionActivity` being opaque and full-screen — a translucent or dialog
+  theme would stop `MainActivity` ever reaching Stopped, and the release would silently stop running.
+  The rebuild re-walks the folder, which is also what picks up images added in another app
+  (`INV-GRP-1`). One exception, because the folder picker also stops this screen: while a pick is in
+  flight the rebuild is deferred to its result, which knows the new folder — otherwise every pick
+  would walk the folder it is about to replace.
+- A screen owns the bitmaps it decoded — or, where a helper decoded them for it, that helper owns
+  them until they are attached: repointing an `ImageView` recycles the one it replaces, and
+  `OnDestroy` detaches and frees whatever is still attached. A decoded preview is therefore always
+  owned by exactly one of the two, never both and never neither: `LibraryLoader` frees anything the
+  grid did not take, including everything an abandoned load decoded. The player screen has a
+  **second** owner of its own — the one-entry prefetch cache, holding a pose nothing has attached
+  yet — freed on every way out of the screen, plus a third transient one in a decode whose result
+  arrived too late to want. Its steady-state peak is therefore two full-size poses, not one, which
+  is part of what the decode bound below is budgeted against. A JNI global ref keeps a Bitmap alive
   until a managed GC plus finalizer pass, which is far too late under a session's decode rate.
 - A single unreadable image must never sink the screen: decode failures return `null` and are
   logged, and the session skips past them with a bounded failure budget.
@@ -273,11 +336,11 @@ injected clock/`Random`/loader making them deterministic. One file per Core type
 type owns several invariant families: the session aggregate has one file per family
 (`DrawingSessionTests`, `DrawingSessionSetupTests`, `DrawingSessionCountdownTests`,
 `DrawingSessionImageTests`, `DrawingSessionBreakTests`, `DrawingSessionTimeAccountingTests`), which
-is what keeps a 350-test suite navigable after the consolidation.
+is what keeps a suite of this size navigable after the consolidation.
 
 **Contract tests** (`UiResourceContractTests`, `SessionScreenContractTests`, `TypefaceContractTests`,
-`SourceContractTests`, `CrossActivityContractTests`,
-`FolderMemoryContractTests`, `AndroidBuildTests`) —
+`SourceContractTests`, `CrossActivityContractTests`, `FolderMemoryContractTests`,
+`LibraryLoadContractTests`, `AndroidBuildTests`) —
 a pattern worth understanding before touching the Android layer. They parse the *source and XML as
 files* rather than running them, so they need no device but still catch the runtime-only failures
 that Xamarin's compile-time checks miss: a view id referenced from code but absent from the layout,
@@ -285,7 +348,8 @@ a missing string, a build property regression. `TestPaths` locates the repo root
 `FigureDrawing.sln`, since the working directory differs between `nx` and `dotnet test`.
 
 A contract test reads *code*, not prose: `SourceContract` (shared by `FolderMemoryContractTests`,
-`SessionScreenContractTests`, and `CrossActivityContractTests`, and tested itself in
+`SessionScreenContractTests`, `CrossActivityContractTests` and `LibraryLoadContractTests`,
+and tested itself in
 `SourceContractTests`) strips comments and string
 literals before anything is asserted, because an assertion a comment can satisfy stays green
 through the deletion it exists to catch — and one a comment can *break* fails a build that behaves.
@@ -407,9 +471,9 @@ numbered invariants live in a companion document, [DOMAIN-MODEL.md](DOMAIN-MODEL
 a bounded context that cannot live inside `FigureDrawing.Core` is a modelling mistake, not a
 reason to put a rule in an Activity.
 
-Derived from the code as of FD-005, following the `v3-ddd-architecture` skill. Two of that
+Derived from the code as of FD-009, following the `v3-ddd-architecture` skill. Two of that
 skill's prescriptions are **deliberately not adopted**: the microkernel/plugin runtime and a
-dependency-injection container. This is a single-user offline app of ~1,200 lines with no
+dependency-injection container. This is a single-user offline app of ~2,000 lines with no
 extension points and no third-party modules; a kernel registry would add indirection without
 removing a rule. Constructor injection by hand (§4) already gives the same inversion.
 
@@ -435,6 +499,9 @@ strings use them consistently; a synonym in a new type name is a review comment.
 | **Drawing time** | Accumulated time over completed poses only; skipped time is never banked | "elapsed", "session length" |
 | **Unreadable** | An image id the loader could not decode; skipped and logged, never fatal | "corrupt", "missing" |
 | **Settings** | The persisted user preferences document that *seeds* setup across launches | "config" |
+| **Load** | One attempt to read a reference library: the walk plus the previews it decodes | "refresh", "scan" |
+| **Abandon** | Declare a load's result unwanted, so it writes nothing and frees what it decoded | "cancel" (nothing is interrupted; the load notices and stops) |
+| **Preview** | A decoded thumbnail in the reference grid, as against the pose on the player screen | "thumbnail" in prose — the identifiers keep it (`MaxThumbnails`, `thumbnail_desc`) |
 
 Two distinctions carry real invariants and are worth stating twice:
 
@@ -460,6 +527,12 @@ Supporting, deliberately outside the four: **Rendering** (`ImageDecoding`, `Bitm
 `GridContrast`, the `ImageView` wiring). It has no domain rules — only the memory-bound decode
 policy of §8 and the legibility policy of the viewing aids. It is a shared technical service, not a
 context, and `BitmapMath` and `GridContrast` are the pieces of it pure enough to live in Core.
+
+A second supporting group since FD-009: **Background work** (`LibraryLoader`, and in Core
+`LoadGeneration` and `LibraryLoadState`). Also no domain rules — it decides which in-flight load may
+write the screen and whether a re-walk keeps the pool it is showing (`INV-X-13`). The two Core
+pieces are there because they are the parts a test can execute; the loader stays Android-side
+because it holds decoded bitmaps.
 
 `GridContrast` is where a viewing aid's *appearance* is decided, as against `ViewerTools`, which
 owns whether that aid is on. Keeping the two apart is what lets `ViewerTools` stay a bag of pure
@@ -493,7 +566,7 @@ change:
   interprets a content URI. That opacity is what lets tests pass `"a"`, `"b"`, `"c"`.
 - **Storage Access Framework → Reference Library — anti-corruption layer.** `IDocumentTree` +
   `DocumentEntry` are the ACL. `DocumentsContract`, `ContentResolver`, and `Cursor` stop at
-  `MainActivity.ContentResolverDocumentTree` — that is §4's interface-adapter pattern stated as a
+  `LibraryLoader.ContentResolverDocumentTree` — that is §4's interface-adapter pattern stated as a
   context rule. One carve-out, stated rather than drifted into: the *form* of the reference this app
   persisted is domain knowledge, so `LibraryReference` recognises a `content://` tree URI while
   still never constructing, resolving, or querying one (`INV-TREE-1`, `INV-REF-1`).
@@ -667,7 +740,7 @@ The skill's four layers map onto the projects of §2 as follows. Dependencies po
 | **Presentation** | `MainActivity`, `SessionActivity`, layouts, strings | App project |
 | **Application** | Use-case orchestration: wiring a session, advancing a pose, launching a screen | Mostly inside the Activities; resolving an id to a displayable image now sits inside the domain aggregate |
 | **Domain** | `DrawingSession<TImage>`, `SessionSetup`, `ReferenceLibrary`, `ViewerTools`, value objects | `FigureDrawing.Core` |
-| **Infrastructure** | `Settings` (LiteDB), `ContentResolverDocumentTree` (SAF), `ImageDecoding` (BitmapFactory) | Core `Data/` + app project |
+| **Infrastructure** | `Settings` (LiteDB), `LibraryLoader` + its `ContentResolverDocumentTree` (SAF, off the UI thread), `ImageDecoding` (BitmapFactory) | Core `Data/` + app project |
 
 The domain layer has no outward dependency: `FigureDrawing.Core` references only LiteDB, and only
 from `Data/`. Verified structurally by `AndroidBuildTests` and by the project references.
@@ -688,15 +761,19 @@ Live findings, ordered by how much they cost. None is a blocker; each has a stat
    database, loading and saving settings). The Claude Design import made this literal: the three
    contexts are now the three tabs of one screen. Not a god object at this size, but it is the only
    class in the codebase that touches three contexts, so it is where the next rule will be tempted
-   to land. On the next feature that touches it, split by context: keep view wiring in the Activity
-   and move folder-loading and settings-syncing into their own adapter classes.
+   to land.
 
    *Deferred once, deliberately (remembered-folder work).* That change added `OnPause`,
    `SaveSettings`, `CaptureTypedInputs`, `RememberedTree`, `LastPickedDocumentUri`,
    `PersistedGrants`, `ReleaseSupersededGrants`, `RefreshGrant` and `ShowRememberedFolderUnavailable`
    to this class, and moved every *rule* it could into `LibraryReference` instead of splitting the
-   screen. The new trigger is concrete: the next feature that adds a method here which is neither
-   view wiring nor a one-line call into Core does the split first.
+   screen.
+
+   **Partly closed by FD-009**, which took the first split: the folder walk, the preview decodes,
+   the SAF adapter and the abandonment guard now live in `LibraryLoader`, and the Activity keeps
+   view wiring and lifecycle. Settings-syncing is the remaining candidate, and the trigger stands —
+   the next feature that adds a method here which is neither view wiring nor a one-line call into
+   Core does that split first.
 2. ~~The pose-restart rule lives in an Activity~~ — closed by the session aggregate (§17).
 3. ~~`SettingsStore` has no port interface~~ — closed by merging it into `Settings` (§17): there was
    no second implementation to justify the seam. `Settings` still carries a LiteDB attribute, and
@@ -712,10 +789,12 @@ Live findings, ordered by how much they cost. None is a blocker; each has a stat
    zoom set for one pose is still applied to the next. `INV-VIEW-4` was written to match the code
    rather than the other way round; wiring the reset into the phase change is a one-line UX decision
    nobody has made.
-7. **Image decoding still runs on the main thread in the folder walk on launch** — up to 24 preview
-   thumbnails inside `OnCreate`, specified in [FD-009](prds/FD-009-async-reference-library.md).
-   (Grants are no longer accumulated: picking a different folder releases the ones it supersedes and
-   a restore re-takes the one in use, `INV-REF-4`.) Not a Core concern, and not new.
+7. ~~**Image decoding runs on the main thread**~~ — closed on both sides. The player screen's half
+   went with [FD-010](prds/FD-010-pose-decode-off-the-tick.md) (the next pose is decoded during the
+   current one), and the folder walk's half with
+   [FD-009](prds/FD-009-async-reference-library.md) (the walk and up to 24 preview decodes moved off
+   the UI thread). Grants are no longer accumulated either: picking a different folder releases the
+   ones it supersedes and a restore re-takes the one in use (`INV-REF-4`).
 
    Three entries that used to sit here are closed: the pool no longer crosses to the player whole
    (it is sampled to a handoff bounded by the session's own length, `INV-POOL-6`), decoded bitmaps
@@ -744,15 +823,16 @@ goes:
 - **Cross-context flows** (setup → session → summary) → the `*E2ETests.cs` model tests, which drive
   the real Core objects with no Android.
 - **Adapter conformance** (`IDocumentTree`, the bitmap loader) → in-memory fakes in unit tests. The
-  Android implementations are covered by the contract tests only to the extent that their view ids
-  and strings exist.
+  Android implementations are covered by the contract tests for their view ids and strings, and —
+  since FD-009 — for the threading and ordering decisions a unit test cannot reach: which lifecycle
+  method abandons a load, and that the guard is read before anything is written.
 - **Nothing about the domain is tested through Appium.** A domain rule reachable only from a UI test
   is a rule in the wrong layer (§14).
 
 Success criteria for the DDD structure, checkable rather than aspirational:
 
 - [x] `FigureDrawing.Core` has zero `Android.*` / `Java.*` references — guarded by project setup and `AndroidBuildTests`
-- [x] Each Core type belongs to exactly one context in the §16 table; new types are added to it
+- [x] Each Core type belongs to exactly one context in the §16 table, or to a named supporting group there; new types are added to it
 - [x] The catalogue stays at ten objects unless a new one earns its place — a new Core type must
       justify itself against [DOMAIN-MODEL.md §9](DOMAIN-MODEL.md#9-consolidation), or be added to
       the catalogue with its own invariants and tests

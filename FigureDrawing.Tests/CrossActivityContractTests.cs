@@ -52,20 +52,37 @@ public sealed class CrossActivityContractTests
         Assert.DoesNotMatch(@"using\s+Settings\s*=", Session.Code);
     }
 
-    // The folder persistence chain — pick → save → restore — must be synchronous end to end
-    // (INV-SET-P4). An `async` method in MainActivity introduces a point where the continuation may
-    // not run before the process dies: the artist swipes the app, the system reclaims it, and the
-    // await's continuation (which includes the Save) never fires. This is exactly the class of change FD-010 introduced
-    // in SessionActivity (where it is correct — session construction is not persistence-critical) and
-    // that FD-013 showed cannot exist on the persistence side.
+    // The folder persistence chain — validate → assign → save — must be synchronous end to end
+    // (INV-SET-P4). An `await` inside it introduces a point where the continuation may not run
+    // before the process dies: the artist swipes the app, the system reclaims it, and the Save never
+    // fires. That is what FD-013 showed cannot exist on the persistence side.
     //
-    // If a future feature genuinely needs async in MainActivity, this test forces the conversation:
-    // the developer must move the feature to Core (where it can be tested without the lifecycle) or
-    // restructure the persistence chain to save synchronously before the await.
-    [Fact]
-    public void MainActivity_HasNoAsyncMethods()
+    // Originally this banned `async` anywhere in MainActivity, and named the two ways out if a
+    // feature ever needed it: move it to Core, or restructure the chain to save synchronously before
+    // the await. FD-009 needed it — the SAF walk and the preview decodes cannot leave the Android
+    // layer, and they were freezing launch — and took the second way out. The screen is async now;
+    // the persistence chain still is not, and that is the property worth pinning. The chain's own
+    // ordering is asserted in FolderMemoryContractTests.PickingAFolder_PersistsItAsLastCollection.
+    [Theory]
+    [InlineData("OnActivityResult")]
+    [InlineData("OnPause")]
+    [InlineData("RestoreLastFolder")]
+    public void ThePersistenceChain_IsSynchronous(string method)
     {
-        // Stripped source: a mention in a comment is not a method declaration.
-        Assert.DoesNotMatch(@"(?<!\w)async\s", Main.Code);
+        // Stripped source: a mention in a comment is not an await.
+        Assert.DoesNotMatch(@"(?<!\w)await\s", Main.MethodBody(method));
+    }
+
+    // Async is confined to the library load. Anything else in this screen that starts awaiting is
+    // either persistence-adjacent or a rule that belongs in Core, and both want the conversation
+    // FD-013 asked for rather than a quiet second continuation.
+    [Fact]
+    public void OnlyTheLibraryLoad_IsAsynchronous()
+    {
+        var declarations = System.Text.RegularExpressions.Regex.Matches(Main.Code, @"(?<!\w)async\s+\w[\w<>?]*\s+(\w+)\s*\(")
+            .Select(m => m.Groups[1].Value)
+            .ToList();
+
+        Assert.Equal(["LoadFolderAsync"], declarations);
     }
 }

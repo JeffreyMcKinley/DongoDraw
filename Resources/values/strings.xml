@@ -38,7 +38,9 @@
     <string name="library_more_format">+{0} more not shown</string>
     <string name="pick_button_text">Pick folder</string>
     <string name="empty_label_text">No folder selected yet. Tap \"Pick folder\" to choose a folder of reference images.</string>
+    <string name="library_loading_text">Reading that folder…</string>
     <string name="empty_folder_text">No images found in that folder. Pick a folder that contains image files.</string>
+    <string name="picker_error_text">No app on this device can pick a folder.</string>
     <string name="folder_error_text">Couldn\'t open that folder. Try picking it again.</string>
     <string name="folder_unavailable_text">Couldn\'t reopen your last folder. It may have been moved, or its permission cleared. Pick it again — the picker opens where you left off.</string>
     <string name="thumbnail_desc">Reference image</string>

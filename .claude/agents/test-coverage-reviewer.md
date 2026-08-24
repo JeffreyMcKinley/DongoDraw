@@ -32,8 +32,11 @@ Four tiers, cheapest first — a finding must name which tier the missing test b
    lives here, made deterministic by the injected clock, `Random`, and loader.
 2. **Contract tests** (`UiResourceContractTests`, `SessionScreenContractTests`,
    `TypefaceContractTests`, `FolderMemoryContractTests`, `CrossActivityContractTests`,
-   `SourceContractTests`, `AndroidBuildTests`) — parse source and
-   XML as files, no device. They catch the runtime-only failures the compiler misses: a view id
+   `LibraryLoadContractTests`, `SourceContractTests`, `AndroidBuildTests`) — parse source and XML
+   as files, no device. The reading machinery is shared in `SourceContract` (itself covered by
+   `SourceContractTests`). This tier pins *where* a decision is made; it cannot execute anything, so
+   a rule that could be inverted and still read the same belongs in a unit test instead. They catch
+   the runtime-only failures the compiler misses: a view id
    referenced in code but absent from the layout, a missing string, a build property regression.
    They strip comments and literals before asserting, and pin which API a method reaches rather
    than how a statement is spelled.

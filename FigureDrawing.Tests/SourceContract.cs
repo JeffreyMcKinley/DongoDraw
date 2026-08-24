@@ -50,27 +50,86 @@ internal sealed class SourceContract
     // cannot retarget the search.
     public string MethodBody(string methodName)
     {
-        var declaration = Regex.Match(
+        var (start, length) = MethodBodySpan(methodName);
+        return Code.Substring(start, length);
+    }
+
+    // Where a method's body sits in the file, for assertions that need to say "this call is inside
+    // that method" without re-finding the body by substring — two methods with identical bodies, or
+    // one body that is a prefix of another, would send IndexOf to the wrong place.
+    public (int Start, int Length) MethodBodySpan(string methodName)
+    {
+        // Every candidate, not just the first. The parameter list may wrap across lines, which a
+        // signature like LibraryLoader.LoadAsync's does — but allowing that also lets a
+        // statement-leading wrapped *call* match, and taking the first hit would then fail on "not
+        // followed by a block body" instead of finding the declaration below it. Requiring the block
+        // as part of the search is what keeps a call out.
+        var candidates = Regex.Matches(
             Code,
-            $@"(?m)^[ \t]*(?:[\w.<>?\[\],]+[ \t]+)+{Regex.Escape(methodName)}[ \t]*\([^)\n]*\)[ \t]*$");
+            $@"(?m)^[ \t]*(?:[\w.<>?\[\],]+[ \t]+)+{Regex.Escape(methodName)}[ \t]*\([^)]*\)[ \t]*$");
 
-        Assert.True(declaration.Success, $"{_fileName} no longer declares a method named '{methodName}'.");
+        var declaration = candidates.FirstOrDefault(m =>
+        {
+            var brace = Code.IndexOf('{', m.Index + m.Length);
+            return brace >= 0 && Code[(m.Index + m.Length)..brace].Trim().Length == 0;
+        });
 
-        var open = Code.IndexOf('{', declaration.Index + declaration.Length);
-        Assert.True(open >= 0, $"No body found for '{methodName}'.");
         Assert.True(
-            Code[(declaration.Index + declaration.Length)..open].Trim().Length == 0,
-            $"'{methodName}' is not followed by a block body; this test cannot read it.");
+            declaration is not null,
+            $"{_fileName} no longer declares a block-bodied method named '{methodName}'. " +
+            "(An expression-bodied member, or a parameter list containing ')', is unreadable here.)");
+
+        var open = Code.IndexOf('{', declaration!.Index + declaration.Length);
 
         var depth = 0;
         for (var i = open; i < Code.Length; i++)
         {
             if (Code[i] == '{') depth++;
             else if (Code[i] == '}' && --depth == 0)
-                return Code[open..(i + 1)];
+                return (open, i + 1 - open);
         }
 
         throw new InvalidOperationException($"Unbalanced braces after '{methodName}'.");
+    }
+
+    // The braced block that follows a position — the body of the `if` a guard opens, say. Lets an
+    // assertion say "this happens *inside* that branch" rather than merely "somewhere after it",
+    // which is the difference between pinning a conditional and pinning nothing.
+    public static string BlockAfter(string body, int from)
+    {
+        var open = body.IndexOf('{', from);
+        Assert.True(open >= 0, "No braced block follows the guard; this test cannot read it.");
+
+        // The block has to be the one this guard opens. Anything but whitespace or the condition's
+        // closing paren in between means the brace belongs to something else — a property pattern
+        // (`is not { } x`), an object initializer, a collection expression — and the assertion built
+        // on it would silently be about unrelated code. A brace-less body lands here too, which is
+        // correct: `if (x) Foo();` has no block for a caller to reason about.
+        var between = body[from..open];
+        Assert.True(
+            between.All(c => char.IsWhiteSpace(c) || c == ')'),
+            $"The next brace after the guard does not open its block; found \"{between.Trim()}\" in between. " +
+            "Pass a position past the whole condition, or assert on the statement directly.");
+
+        var depth = 0;
+        for (var i = open; i < body.Length; i++)
+        {
+            if (body[i] == '{') depth++;
+            else if (body[i] == '}' && --depth == 0)
+                return body[open..(i + 1)];
+        }
+
+        throw new InvalidOperationException("Unbalanced braces after the guard.");
+    }
+
+    // The index of the first occurrence of a snippet within a body, asserted to exist. Used to
+    // state orderings — "the guard is read before the field is written" — which is what most of
+    // FD-009's threading contract comes down to.
+    public static int IndexOf(string body, string snippet, string because)
+    {
+        var at = body.IndexOf(snippet, StringComparison.Ordinal);
+        Assert.True(at >= 0, because);
+        return at;
     }
 
     // Replaces the contents of comments and literals with spaces, keeping the length and the line

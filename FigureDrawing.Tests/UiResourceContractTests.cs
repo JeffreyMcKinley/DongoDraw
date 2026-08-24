@@ -106,7 +106,9 @@ public class UiResourceContractTests
     public void Strings_DeclaresSessionSetupStrings(string name) =>
         Assert.Contains(name, StringResourceNames());
 
-    // FD-001 explicit string contract: picker label + every empty-state message.
+    // FD-001 explicit string contract: picker label + every empty-state message. Plus FD-009's
+    // loading caption, which empty_label carries while the walk and the preview decodes run off the
+    // UI thread — the reason a folder being read is never captioned as one with nothing in it.
     [Theory]
     [InlineData("app_name")]
     [InlineData("pick_button_text")]
@@ -114,6 +116,8 @@ public class UiResourceContractTests
     [InlineData("empty_folder_text")]
     [InlineData("folder_error_text")]
     [InlineData("folder_unavailable_text")]
+    [InlineData("library_loading_text")]
+    [InlineData("picker_error_text")]
     public void Strings_DeclaresFdStrings(string name) =>
         Assert.Contains(name, StringResourceNames());
 
@@ -126,7 +130,13 @@ public class UiResourceContractTests
     {
         var texts = StringResources();
 
-        var messages = new[] { "empty_label_text", "empty_folder_text", "folder_error_text", "folder_unavailable_text" }
+        var messages = new[]
+            {
+                "empty_label_text", "empty_folder_text", "folder_error_text", "folder_unavailable_text",
+                // FD-009 put two more captions on the same label: one while the folder is being
+                // read, one when no app on the device can pick a folder at all.
+                "library_loading_text", "picker_error_text",
+            }
             .Select(name => texts[name])
             .ToList();
 

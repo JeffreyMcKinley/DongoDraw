@@ -101,6 +101,50 @@ internal static class UiTestEnvironment
             "-d", $"file://{DefaultPickerDir}");
     }
 
+    // The distinguishing part of Resources/values/strings.xml's empty_folder_text. Owned here rather
+    // than spelled out at each assertion so a copy edit has one place to be reflected — the same
+    // reason SeededImageName exists.
+    public const string EmptyFolderMessage = "No images found";
+
+    // The distinguishing part of library_loading_text. The one caption that is on screen for exactly
+    // as long as a load is running, which makes "it is gone" the only precise way to wait for a load
+    // to finish: the pool count is retained across a re-walk of the same folder, so it is already
+    // populated before the new walk lands.
+    public const string LoadingMessage = "Reading that folder";
+
+
+    // Adds images to the already-seeded folder without disturbing what is there, standing in for the
+    // artist dropping files in from another app. SeedDefaultFolder wipes the folder first, so it
+    // cannot be reused for this: the point is that the app notices files it has not seen before.
+    public static void AddImagesToDefaultFolder(int firstIndex, int count)
+    {
+        var staging = Path.Combine(Path.GetTempPath(), "fd-seed-extra");
+        if (Directory.Exists(staging))
+            Directory.Delete(staging, recursive: true);
+
+        Directory.CreateDirectory(staging);
+
+        var png = Convert.FromBase64String(OnePixelPngBase64);
+        for (var i = 0; i < count; i++)
+            File.WriteAllBytes(Path.Combine(staging, SeededImageName(firstIndex + i)), png);
+
+        RunAdb("push", Path.Combine(staging, "."), DefaultPickerDir);
+
+        RunAdb("shell", "am", "broadcast", "-a", "android.intent.action.MEDIA_SCANNER_SCAN_FILE",
+            "-d", $"file://{DefaultPickerDir}");
+
+        // Verified rather than assumed: a push that silently lands in the wrong place would surface
+        // fifteen seconds later as a wrong library count, blaming the app for a seeding failure.
+        var listing = RunAdb("shell", "ls", DefaultPickerDir);
+        for (var i = 0; i < count; i++)
+        {
+            var name = SeededImageName(firstIndex + i);
+            if (!listing.Contains(name, StringComparison.Ordinal))
+                throw new InvalidOperationException(
+                    $"Seeding failed: {name} is not in {DefaultPickerDir}. Listing: {listing}");
+        }
+    }
+
     // The name of the nth seeded image. Owned here so a test asserting on a seeded file cannot
     // drift from what seeding actually writes.
     public static string SeededImageName(int index) => $"img{index}.png";

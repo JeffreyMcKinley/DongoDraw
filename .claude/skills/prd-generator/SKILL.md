@@ -27,7 +27,7 @@ them is wrong, not visionary.
 | a rework of existing behaviour | **FD ticket** citing the invariants it changes | `docs/prds/` |
 
 Default to the FD ticket. It is the format the repo already uses
-([FD-001..FD-008](../../../docs/prds/README.md)) and it is smaller than a PRD for a reason.
+(see [the index](../../../docs/prds/README.md); FD-009 is the worked example) and it is smaller than a PRD for a reason.
 
 Ticket ID = highest existing `FD-0NN` + 1. Never reuse or renumber.
 
@@ -61,8 +61,8 @@ Every PRD states this before it states requirements. Fill the table:
 | Field | Answer |
 |---|---|
 | Bounded context | Reference Library / Session Setup / Session Execution / Preferences / Rendering (supporting) |
-| Owning object | one of the nine in [DOMAIN-MODEL.md §1](../../../docs/DOMAIN-MODEL.md) |
-| New Core type? | usually **no** — justify against [DOMAIN-MODEL.md §9](../../../docs/DOMAIN-MODEL.md) |
+| Owning object | one of the ten in [DOMAIN-MODEL.md §1](../../../docs/DOMAIN-MODEL.md) |
+| New Core type? | usually **no** — justify a new *domain* object against [DOMAIN-MODEL.md §9](../../../docs/DOMAIN-MODEL.md). A supporting type (pure, Android-free, testable — see ARCHITECTURE.md §3/§16) is a smaller decision and does not join the catalogue |
 | New invariants | `INV-<FAMILY>-<n>`, using the existing families (`SES`, `POSE`, `POOL`, `GRP`, `SET`, `CFG`, `VIEW`, `STO`, …) |
 | Invariants changed | cite by id; a changed invariant is a breaking change and must say so |
 | Crosses a context boundary? | if yes, name the contract (`SessionConfig`, the pool, an intent extra, a `Settings` property) |
@@ -154,8 +154,10 @@ what is deferred to a later FD ticket.
 **Risks** — pull from the known costs in
 [ARCHITECTURE.md §20](../../../docs/ARCHITECTURE.md) when the change goes near them:
 
-- decoding runs on the main thread, both in the repaint loop at a pose boundary and in the folder
-  walk on launch (FD-009, FD-010)
+- decoding still runs on the main thread in the repaint loop at a pose boundary (FD-010); the folder
+  walk's half of this shipped in FD-009. A PRD that introduces background work must follow the shape
+  in [ARCHITECTURE.md §7](../../../docs/ARCHITECTURE.md#7-threading) rather than inventing one, and
+  must say where its work is abandoned and why
 - the pool crossing to the player is bounded by `ReferenceLibrary.Sample` (`INV-POOL-6`), so a
   feature that widens what crosses has to re-check that bound
 - session state is not saved across process death
@@ -195,5 +197,5 @@ a decision that will be made accidentally during implementation.
 - Anti-patterns for PRDs here mirror the code ones: a requirement that only an Activity could
   satisfy, a rule stated in terms of a widget, a persisted flag that duplicates `SessionConfig`,
   a story that needs a network call.
-- Existing tickets FD-001..FD-008 are the reference for tone and length. Match them; they are
+- The committed tickets (FD-009, FD-010, FD-011) are the reference for tone and length. Match them; they are
   short on purpose.

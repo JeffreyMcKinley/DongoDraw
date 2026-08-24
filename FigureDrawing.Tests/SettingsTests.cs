@@ -304,13 +304,18 @@ public sealed class SettingsTests : IDisposable
     [Fact]
     public void OnlySettings_OpensTheDatabase()
     {
+        // Matched on the path *below* the repo root, not the absolute one: a git worktree lives
+        // under .claude/worktrees/<branch>, so an absolute match on ".claude" excludes every file in
+        // the checkout — including Settings.cs — and the assertion passes by finding nothing at all.
         var owners = Directory
             .EnumerateFiles(TestPaths.RepoRoot, "*.cs", SearchOption.AllDirectories)
-            .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}") &&
-                           !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}") &&
-                           !path.Contains($"{Path.DirectorySeparatorChar}.claude{Path.DirectorySeparatorChar}") &&
+            .Select(path => (Path: path, Relative: Path.GetRelativePath(TestPaths.RepoRoot, path)))
+            .Where(file => !file.Relative.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}") &&
+                           !file.Relative.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}") &&
+                           !file.Relative.StartsWith($".claude{Path.DirectorySeparatorChar}") &&
                            // This file names the type in the assertion below, not in a call.
-                           !path.EndsWith("SettingsTests.cs"))
+                           !file.Relative.EndsWith("SettingsTests.cs"))
+            .Select(file => file.Path)
             .Where(path => File.ReadAllText(path).Contains("new LiteDatabase("))
             .Select(Path.GetFileName)
             .ToList();

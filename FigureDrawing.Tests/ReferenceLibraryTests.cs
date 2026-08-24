@@ -229,16 +229,65 @@ public class ReferenceLibraryTests
 
     // Membership is derived, never stored (INV-GRP-1): re-enumerating picks up an edited folder.
     [Fact]
-    public void Enumerate_RewalksTheTree_PickingUpChanges()
+    public void ReWalking_PicksUpAnEditedFolder()
     {
         var tree = new FakeTree(new() { ["root"] = [Img("a")] });
         var library = new ReferenceLibrary(tree, "root");
         Assert.Equal(new[] { "a" }, library.Pool);
 
+        // A fresh instance, which is how production re-derives: the walk is the constructor, and
+        // rebuilding a live library's pool in place would publish it half-built (INV-X-13).
         tree.Replace("root", Img("a"), Img("b"));
-        library.Enumerate();
+        var reloaded = new ReferenceLibrary(tree, "root");
 
-        Assert.Equal(new[] { "a", "b" }, library.Pool);
+        Assert.Equal(new[] { "a", "b" }, reloaded.Pool);
+    }
+
+    // A walk that is abandoned part-way stops being answered by the tree (FD-009 pairs the SAF
+    // adapter with an abandonment check, so a superseded load's queries return nothing). The domain
+    // side is an ordinary partial pool in encounter order, with no throw: membership is
+    // whatever the tree reports now (INV-GRP-1) and a query that yields nothing is the answer the
+    // adapter already gives a revoked grant (INV-TREE-4). The partial pool is discarded by the
+    // loader on the main thread and never reaches the screen.
+    //
+    // Every boundary, not just the middle: abandoned before the root is listed, after the root but
+    // before any images, part-way, and never abandoned at all.
+    [Theory]
+    [InlineData(0, new string[0])]
+    [InlineData(1, new string[0])]
+    [InlineData(2, new[] { "a1", "a2" })]
+    [InlineData(3, new[] { "a1", "a2", "b1", "b2" })]
+    public void ATreeThatStopsAnswering_YieldsWhateverItGotTo(int answerFirst, string[] expected)
+    {
+        var tree = new StopsAnsweringTree(answerFirst);
+
+        var library = new ReferenceLibrary(tree, "root");
+
+        Assert.Equal(expected, library.Pool);
+        Assert.Equal(Math.Min(answerFirst, 3), tree.Walks);
+    }
+
+    // Answers the first N GetChildren calls and nothing afterwards, standing in for a walk whose
+    // load was superseded midway through.
+    sealed class StopsAnsweringTree(int answerFirst) : IDocumentTree
+    {
+        static readonly Dictionary<string, DocumentEntry[]> Children = new()
+        {
+            ["root"] = [Folder("a"), Folder("b")],
+            ["a"] = [Img("a1"), Img("a2")],
+            ["b"] = [Img("b1"), Img("b2")],
+        };
+
+        public int Walks { get; private set; }
+
+        public IEnumerable<DocumentEntry> GetChildren(string parentDocumentId)
+        {
+            if (Walks >= answerFirst)
+                return [];
+
+            Walks++;
+            return Children.TryGetValue(parentDocumentId, out var kids) ? kids : [];
+        }
     }
 
     [Fact]
@@ -250,15 +299,14 @@ public class ReferenceLibraryTests
         Assert.Empty(empty.Pool);
         Assert.Equal(string.Empty, empty.RootDocumentId);
 
-        // Re-enumerating a library with no folder behind it is a no-op, not a crash.
-        empty.Enumerate();
-        Assert.Empty(empty.Pool);
+        // And a second Empty is just as empty — the no-folder state has no walk behind it to redo.
+        Assert.Empty(ReferenceLibrary.Empty.Pool);
     }
 
     // A session copies the pool at construction, so re-walking the folder mid-session cannot
     // reorder or resize the run already under way (INV-POOL-4).
     [Fact]
-    public void ReEnumerating_DoesNotDisturbARunningSession()
+    public void ReLoadingTheFolder_DoesNotDisturbARunningSession()
     {
         var tree = new FakeTree(new() { ["root"] = [Img("a"), Img("b")] });
         var library = new ReferenceLibrary(tree, "root");
@@ -267,8 +315,10 @@ public class ReferenceLibraryTests
             library.Pool, new SessionConfig(30, 4), id => id,
             shuffle: false, random: new Random(1), clock: () => TimeSpan.Zero);
 
+        // The screen re-loads by building a new library over the edited tree, exactly as the loader
+        // does on every return to the screen. The running session drew from a copy of the pool.
         tree.Replace("root", Img("z"), Img("y"), Img("x"));
-        library.Enumerate();
+        var reloaded = new ReferenceLibrary(tree, "root");
 
         var seen = new List<string>();
         while (!session.IsComplete)
@@ -278,7 +328,11 @@ public class ReferenceLibraryTests
         }
 
         Assert.Equal(new[] { "a", "b", "a", "b" }, seen);
-        Assert.Equal(new[] { "z", "y", "x" }, library.Pool);
+
+        // The new library sees the edit; the one the session drew from is untouched, which is what
+        // makes the swap safe to do while a session is running (INV-POOL-4).
+        Assert.Equal(new[] { "z", "y", "x" }, reloaded.Pool);
+        Assert.Equal(new[] { "a", "b" }, library.Pool);
     }
 
     // --- The bounded handoff (INV-POOL-6) ------------------------------------
@@ -456,9 +510,13 @@ public class ReferenceLibraryTests
 
         tree.Failing = true;
 
-        // The screen catches this and shows the unavailable message; the pool it was already showing
-        // must not have been replaced by a partial one on the way out.
-        Assert.Throws<InvalidOperationException>(library.Enumerate);
+        // A re-walk is a *new* library, not a second walk on the live one (FD-009 made Enumerate
+        // private for exactly this reason), so a provider that starts throwing cannot reach the pool
+        // the screen is already showing: the failure happens while building the replacement, and the
+        // replacement is never assigned. The screen catches it and shows the unavailable message,
+        // with the pool it had still whole underneath (INV-POOL-1, INV-X-11).
+        Assert.Throws<InvalidOperationException>(() => new ReferenceLibrary(tree, "root"));
         Assert.Same(pool, library.Pool);
+        Assert.Equal(2, library.Count);
     }
 }
