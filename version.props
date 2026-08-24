@@ -31,7 +31,7 @@
     <FdVersionMajor>0</FdVersionMajor>
     <FdVersionMinor>3</FdVersionMinor>
     <FdVersionPatch>0</FdVersionPatch>
-    <FdBuildNumber>0</FdBuildNumber>
+    <FdBuildNumber>1</FdBuildNumber>
   </PropertyGroup>
 
 </Project>
