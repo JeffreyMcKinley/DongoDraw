@@ -17,5 +17,19 @@
         "www.google-analytics.com"
       ]
     }
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/test-on-save.sh",
+            "timeout": 300
+          }
+        ]
+      }
+    ]
   }
 }

@@ -16,8 +16,8 @@ namespace FigureDrawing.Tests;
 // correct rather than a smell.
 public class LibraryLoadContractTests
 {
-    static readonly SourceShape Loader = new("LibraryLoader.cs");
-    static readonly SourceShape Activity = new("MainActivity.cs");
+    static readonly SourceContract Loader = new("LibraryLoader.cs");
+    static readonly SourceContract Activity = new("MainActivity.cs");
 
     // --- The load runs off the UI thread ---------------------------------------
 
@@ -87,7 +87,7 @@ public class LibraryLoadContractTests
 
         Assert.Matches(@"library\.Pool\.Take\(maxThumbnails\)", body);
 
-        var loop = SourceShape.IndexOf(body, "foreach", "The decode loop is gone.");
+        var loop = SourceContract.IndexOf(body, "foreach", "The decode loop is gone.");
         var guard = body.IndexOf("!isCurrent()", loop, StringComparison.Ordinal);
         var decode = body.IndexOf("DecodeThumbnail(", loop, StringComparison.Ordinal);
 
@@ -95,7 +95,7 @@ public class LibraryLoadContractTests
         Assert.True(guard > loop, "The decode loop no longer checks whether its load is current.");
         Assert.True(guard < decode, "The abandonment check must precede each decode.");
 
-        var abandoned = SourceShape.BlockAfter(body, guard + "!isCurrent()".Length);
+        var abandoned = SourceContract.BlockAfter(body, guard + "!isCurrent()".Length);
 
         // Freed on the worker that decoded them, not left for the continuation, so an abandoned
         // load's previews do not stack on top of the load that superseded it.
@@ -116,12 +116,12 @@ public class LibraryLoadContractTests
     {
         var body = Loader.MethodBody("LoadAsync");
 
-        var take = SourceShape.IndexOf(body, "generation.Take()", "LoadAsync no longer takes a generation.");
+        var take = SourceContract.IndexOf(body, "generation.Take()", "LoadAsync no longer takes a generation.");
 
         // Before the FIRST exit, not merely before the await: an early return that ran ahead of the
         // ticket would let a load that never reaches the walk fail to supersede the one in flight,
         // which is the whole reason the ticket is taken up front.
-        var firstExit = SourceShape.IndexOf(body, "return", "LoadAsync no longer returns anything.");
+        var firstExit = SourceContract.IndexOf(body, "return", "LoadAsync no longer returns anything.");
 
         Assert.True(take < firstExit, "The generation must be taken before any other statement can exit.");
     }
@@ -137,7 +137,7 @@ public class LibraryLoadContractTests
         // The re-check specifically, not the word "generation" — the first occurrence of that is the
         // ticket being *taken* at the top of the method, which would make this ordering true however
         // the guard were mangled.
-        var guard = SourceShape.IndexOf(
+        var guard = SourceContract.IndexOf(
             body, "!IsCurrent(mine)", "LoadAsync no longer re-checks its generation after the walk.");
 
         // The last hand-back, not the first: an early return for an unusable tree precedes the walk.
@@ -161,7 +161,7 @@ public class LibraryLoadContractTests
     {
         var body = Loader.MethodBody("LoadAsync");
 
-        var caught = SourceShape.IndexOf(
+        var caught = SourceContract.IndexOf(
             body, "catch (Exception", "LoadAsync no longer catches a failed walk.");
 
         var guarded = body.IndexOf("!IsCurrent(mine)", caught, StringComparison.Ordinal);
@@ -190,14 +190,14 @@ public class LibraryLoadContractTests
         // is satisfied by the catch block alone, so the leak this criterion names — the abandoned
         // branch dropping its previews — would survive its own test.
         var load = Loader.MethodBody("LoadAsync");
-        var guard = SourceShape.IndexOf(
+        var guard = SourceContract.IndexOf(
             load, "!IsCurrent(mine)", "LoadAsync no longer re-checks its generation after the walk.");
 
         // Inside the abandoned branch, not merely after it: the catch block's own discard is also
         // textually later, so a positional assertion is satisfied by code on a different path.
         Assert.Contains(
             "DiscardThumbnails(",
-            SourceShape.BlockAfter(load, guard + "!IsCurrent(mine)".Length),
+            SourceContract.BlockAfter(load, guard + "!IsCurrent(mine)".Length),
             StringComparison.Ordinal);
     }
 
@@ -213,9 +213,9 @@ public class LibraryLoadContractTests
         // assertion and would make every live walk report an empty folder.
         Assert.Matches(@"if\s*\(\s*!\s*isCurrent\(\)\s*\)", body);
 
-        var guard = SourceShape.IndexOf(
+        var guard = SourceContract.IndexOf(
             body, "isCurrent()", "The SAF adapter no longer checks whether its load is current.");
-        var query = SourceShape.IndexOf(
+        var query = SourceContract.IndexOf(
             body, "resolver.Query", "The SAF adapter no longer queries the provider.");
 
         Assert.True(guard < query, "The abandonment check must come before the provider query.");
@@ -239,9 +239,9 @@ public class LibraryLoadContractTests
     {
         var body = Activity.MethodBody("LoadFolderAsync");
 
-        var guard = SourceShape.IndexOf(
+        var guard = SourceContract.IndexOf(
             body, "loaded is null", "LoadFolderAsync no longer tests whether the load was abandoned.");
-        var assigned = SourceShape.IndexOf(
+        var assigned = SourceContract.IndexOf(
             body, "library =", "LoadFolderAsync no longer assigns the loaded library.");
 
         Assert.True(guard < assigned, "The abandoned load must be discarded before the pool is assigned.");
@@ -257,10 +257,10 @@ public class LibraryLoadContractTests
 
         // And reports it: an empty catch would satisfy "catches its own failures" while losing the
         // folder-error message, leaving the pane captioned "Reading that folder…" forever.
-        var caught = SourceShape.IndexOf(
+        var caught = SourceContract.IndexOf(
             body, "catch (Exception", "LoadFolderAsync no longer catches its own failures.");
 
-        Assert.Contains("ShowFolderError();", body[caught..], StringComparison.Ordinal);
+        Assert.Contains("ShowRememberedFolderUnavailable();", body[caught..], StringComparison.Ordinal);
     }
 
     // The abandonment rule is Core's, and executed by LoadGenerationTests. This pins that the loader
@@ -301,12 +301,12 @@ public class LibraryLoadContractTests
         var guard = System.Text.RegularExpressions.Regex.Match(body, @"if\s*\(\s*gridReleased\s*\)");
         Assert.True(guard.Success, "LoadFolderAsync no longer checks whether the grid was released.");
 
-        var branch = SourceShape.BlockAfter(body, guard.Index + guard.Length);
+        var branch = SourceContract.BlockAfter(body, guard.Index + guard.Length);
         Assert.Contains("DiscardThumbnails(", branch, StringComparison.Ordinal);
         Assert.Contains("return;", branch, StringComparison.Ordinal);
 
         Assert.True(
-            guard.Index < SourceShape.IndexOf(body, "AttachThumbnails(", "The previews are no longer attached."),
+            guard.Index < SourceContract.IndexOf(body, "AttachThumbnails(", "The previews are no longer attached."),
             "The released-grid check must come before the previews are attached.");
     }
 
@@ -315,13 +315,18 @@ public class LibraryLoadContractTests
     [Fact]
     public void TheFolderError_IsCaptionedAfterTheReset()
     {
-        var body = Activity.MethodBody("ShowFolderError");
+        // The caption itself is chosen in Core (LibraryReference.Classify): the screen only raises
+        // walkFailed, so a folder that could not be read reads as Unavailable rather than as one
+        // that turned out to be empty. What has to hold here is that the flag is set *before* the
+        // render that consults it, and lowered afterwards so it does not stick to the next load.
+        var body = Activity.MethodBody("ShowRememberedFolderUnavailable");
 
-        var reset = SourceShape.IndexOf(body, "ResetLibrary();", "ShowFolderError no longer resets first.");
-        var captioned = SourceShape.IndexOf(
-            body, "Resource.String.folder_error_text", "ShowFolderError no longer shows the folder error.");
+        var raised = SourceContract.IndexOf(body, "walkFailed = true;", "The failure is no longer recorded.");
+        var rendered = SourceContract.IndexOf(body, "ResetLibrary();", "The failure no longer re-renders.");
+        var lowered = SourceContract.IndexOf(body, "walkFailed = false;", "The failure flag is never lowered.");
 
-        Assert.True(reset < captioned, "The error caption must be written after ResetLibrary, not before.");
+        Assert.True(raised < rendered, "The failure must be recorded before the state is re-rendered.");
+        Assert.True(rendered < lowered, "The flag must outlive the render that reads it.");
     }
 
     // --- Lifecycle -------------------------------------------------------------
@@ -346,8 +351,8 @@ public class LibraryLoadContractTests
     {
         var body = Activity.MethodBody("OnStop");
 
-        var abandoned = SourceShape.IndexOf(body, "Abandon();", "OnStop no longer abandons.");
-        var cleared = SourceShape.IndexOf(body, "ClearThumbnails();", "OnStop no longer releases the grid.");
+        var abandoned = SourceContract.IndexOf(body, "Abandon();", "OnStop no longer abandons.");
+        var cleared = SourceContract.IndexOf(body, "ClearThumbnails();", "OnStop no longer releases the grid.");
 
         Assert.True(abandoned < cleared, "OnStop must abandon the load before releasing the grid.");
     }
@@ -404,8 +409,8 @@ public class LibraryLoadContractTests
         Assert.Matches(@"if\s*\(\s*!\s*gridReleased\s*\)\s*return;", body);
         Assert.Contains("gridReleased = false;", body, StringComparison.Ordinal);
 
-        var guard = SourceShape.IndexOf(body, "gridReleased", "OnStart no longer guards the repopulate.");
-        var reload = SourceShape.IndexOf(body, "RestoreLastFolder(", "OnStart no longer repopulates.");
+        var guard = SourceContract.IndexOf(body, "gridReleased", "OnStart no longer guards the repopulate.");
+        var reload = SourceContract.IndexOf(body, "RestoreLastFolder(", "OnStart no longer repopulates.");
 
         Assert.True(guard < reload, "OnStart must test whether the grid was released before reloading.");
     }
@@ -418,8 +423,8 @@ public class LibraryLoadContractTests
     {
         var body = Activity.MethodBody("ResetLibrary");
 
-        var abandoned = SourceShape.IndexOf(body, "Abandon();", "ResetLibrary no longer abandons.");
-        var cleared = SourceShape.IndexOf(body, "ClearThumbnails();", "ResetLibrary no longer clears.");
+        var abandoned = SourceContract.IndexOf(body, "Abandon();", "ResetLibrary no longer abandons.");
+        var cleared = SourceContract.IndexOf(body, "ClearThumbnails();", "ResetLibrary no longer clears.");
 
         Assert.True(abandoned < cleared, "ResetLibrary must abandon before it clears.");
     }
@@ -441,7 +446,7 @@ public class LibraryLoadContractTests
     {
         var body = Activity.MethodBody("AttachThumbnails");
 
-        var added = SourceShape.IndexOf(body, "AddThumbnail(", "The previews are no longer attached.");
+        var added = SourceContract.IndexOf(body, "AddThumbnail(", "The previews are no longer attached.");
 
         // The slot is cleared only after the view has taken the bitmap. Matched by shape rather than
         // by the exact spelling of the assignment, which is an implementation choice.
@@ -452,7 +457,7 @@ public class LibraryLoadContractTests
         // A tile that will not attach costs that tile and nothing else.
         Assert.Contains("catch (Exception", body[added..], StringComparison.Ordinal);
 
-        var final = SourceShape.IndexOf(body, "finally", "AttachThumbnails no longer frees the undelivered tail.");
+        var final = SourceContract.IndexOf(body, "finally", "AttachThumbnails no longer frees the undelivered tail.");
         Assert.Contains("DiscardThumbnails(", body[final..], StringComparison.Ordinal);
 
         // The discard has to tolerate the cleared slots, or a successful load throws out of its own
@@ -467,8 +472,8 @@ public class LibraryLoadContractTests
     {
         var body = Activity.MethodBody("OnDestroy");
 
-        var abandoned = SourceShape.IndexOf(body, "Abandon();", "OnDestroy no longer abandons.");
-        var disposed = SourceShape.IndexOf(body, "settings?.Dispose();", "OnDestroy no longer disposes Settings.");
+        var abandoned = SourceContract.IndexOf(body, "Abandon();", "OnDestroy no longer abandons.");
+        var disposed = SourceContract.IndexOf(body, "settings?.Dispose();", "OnDestroy no longer disposes Settings.");
 
         Assert.True(abandoned < disposed, "The load must be abandoned before Settings is disposed.");
     }
@@ -490,7 +495,7 @@ public class LibraryLoadContractTests
 
         // INSIDE the branch, not merely after it: hoisted out of the `if`, every walk would clear
         // the pool and Start would grey out on every return from a session.
-        var branch = SourceShape.BlockAfter(body, compared.Index + compared.Length);
+        var branch = SourceContract.BlockAfter(body, compared.Index + compared.Length);
 
         Assert.Contains("library = ReferenceLibrary.Empty;", branch, StringComparison.Ordinal);
         Assert.Contains("loadedTreeUri = treeUri.ToString();", branch, StringComparison.Ordinal);
@@ -503,38 +508,17 @@ public class LibraryLoadContractTests
     // A grant revoked while the screen was stopped must not leave the released grid under a header
     // still reporting the old folder's count, with Start armed over images that no longer resolve.
     [Fact]
-    public void AFolderLostWhileStopped_LandsInTheEmptyState()
+    public void AFolderLostWhileStopped_IsNoticedOnTheWayBack()
     {
-        // In RestoreLastFolder, not OnStart: both callers need it — a cancelled pick also returns to
-        // a screen whose grid OnStop already released.
-        var body = Activity.MethodBody("RestoreLastFolder");
+        // The handling itself is master's and is tested in FolderMemoryContractTests: a reference
+        // that no longer parses keeps the first-run prompt, and a grant that has gone shows the
+        // remembered-but-unreachable state. What FD-009 adds is a second caller — OnStart now
+        // rebuilds a grid OnStop released, so a folder that went away while the screen was stopped
+        // has to reach that same handling instead of leaving a stale count over a dead pool.
+        Assert.Contains("RestoreLastFolder(", Activity.MethodBody("OnStart"), StringComparison.Ordinal);
 
-        // Matched through the closing paren so the block search starts past the condition — a
-        // property pattern (`is not { } treeUri`) has braces of its own that would otherwise be
-        // mistaken for the branch.
-        var tested = System.Text.RegularExpressions.Regex.Match(
-            body, @"is\s+not\s*\{\s*\}\s*\w+\s*\)");
-        Assert.True(tested.Success, "RestoreLastFolder no longer notices a folder that went away.");
-
-        var branch = SourceShape.BlockAfter(body, tested.Index + tested.Length);
-
-        // Reset, not the folder-error caption: an expired grant is an expected outcome (INV-GRP-5).
-        Assert.Contains("ResetLibrary();", branch, StringComparison.Ordinal);
-        Assert.DoesNotContain("ShowFolderError();", branch, StringComparison.Ordinal);
-
-        // Guarded on having had a folder at all — keyed on loadedTreeUri rather than on the pool,
-        // since a load abandoned before it landed leaves the pool empty while the pane still reads
-        // "Reading that folder…". Keyed on library.IsEmpty, that stale caption is never cleared.
-        var guarded = System.Text.RegularExpressions.Regex.Match(
-            branch, @"if\s*\(\s*loadedTreeUri is not null\s*\)");
-        Assert.True(guarded.Success, "The reset is no longer guarded on having had a folder.");
-
-        // And the reset is INSIDE that guard: un-nested, a first run that is backgrounded and
-        // resumed loses its "No folder selected yet" prompt.
-        Assert.Contains(
-            "ResetLibrary();",
-            SourceShape.BlockAfter(branch, guarded.Index + guarded.Length),
-            StringComparison.Ordinal);
+        var restore = Activity.MethodBody("RestoreLastFolder");
+        Assert.Contains("ShowRememberedFolderUnavailable();", restore, StringComparison.Ordinal);
     }
 
     // The picker stops this screen and its result arrives *after* OnStart, while LastCollection
@@ -544,8 +528,8 @@ public class LibraryLoadContractTests
     {
         var pick = Activity.MethodBody("PickFolder");
         Assert.True(
-            SourceShape.IndexOf(pick, "awaitingPickResult = true;", "PickFolder no longer records the pick.")
-                < SourceShape.IndexOf(pick, "StartActivityForResult(", "PickFolder no longer opens the picker."),
+            SourceContract.IndexOf(pick, "awaitingPickResult = true;", "PickFolder no longer records the pick.")
+                < SourceContract.IndexOf(pick, "StartActivityForResult(", "PickFolder no longer opens the picker."),
             "The pick must be recorded before the picker can stop this screen.");
 
         var start = Activity.MethodBody("OnStart");
@@ -554,18 +538,18 @@ public class LibraryLoadContractTests
 
         Assert.Contains(
             "return",
-            SourceShape.BlockAfter(start, deferred.Index + deferred.Length),
+            SourceContract.BlockAfter(start, deferred.Index + deferred.Length),
             StringComparison.Ordinal);
 
         // And before the reload, or the deferral does nothing.
         Assert.True(
-            deferred.Index < SourceShape.IndexOf(start, "RestoreLastFolder(", "OnStart no longer reloads."),
+            deferred.Index < SourceContract.IndexOf(start, "RestoreLastFolder(", "OnStart no longer reloads."),
             "The deferral must come before the reload it is deferring.");
 
         // The released-grid flag is cleared before that return, or a successful pick's previews are
         // discarded by LoadFolderAsync's released-grid guard and the grid comes back blank.
         Assert.True(
-            SourceShape.IndexOf(start, "gridReleased = false;", "OnStart no longer clears the released flag.")
+            SourceContract.IndexOf(start, "gridReleased = false;", "OnStart no longer clears the released flag.")
                 < deferred.Index,
             "gridReleased must be cleared before OnStart defers to the pick result.");
     }
@@ -578,7 +562,7 @@ public class LibraryLoadContractTests
         Assert.Contains("awaitingPickResult = false;", Activity.MethodBody("PickFolder"), StringComparison.Ordinal);
 
         var result = Activity.MethodBody("OnActivityResult");
-        var cleared = SourceShape.IndexOf(
+        var cleared = SourceContract.IndexOf(
             result, "awaitingPickResult = false;", "OnActivityResult no longer clears the pick.");
 
         // Cancelled, or returned without a folder: OnStop released the grid and OnStart deferred to
@@ -589,7 +573,7 @@ public class LibraryLoadContractTests
 
         Assert.Contains(
             "RestoreLastFolder();",
-            SourceShape.BlockAfter(result, noFolder.Index + noFolder.Length),
+            SourceContract.BlockAfter(result, noFolder.Index + noFolder.Length),
             StringComparison.Ordinal);
     }
 
@@ -609,8 +593,8 @@ public class LibraryLoadContractTests
         // empty library "No images found" and reveals "+N more not shown" against a cleared grid, so
         // the two lines swapped would caption a folder being read as one with nothing in it.
         var load = Activity.MethodBody("LoadFolder");
-        var rendered = SourceShape.IndexOf(load, "RenderLibrary();", "LoadFolder no longer renders.");
-        var loading = SourceShape.IndexOf(load, "ShowLoading();", "LoadFolder no longer shows the loading state.");
+        var rendered = SourceContract.IndexOf(load, "RenderLibrary();", "LoadFolder no longer renders.");
+        var loading = SourceContract.IndexOf(load, "ShowLoading();", "LoadFolder no longer shows the loading state.");
 
         Assert.True(rendered < loading, "The loading caption must land after RenderLibrary or it is clobbered.");
 

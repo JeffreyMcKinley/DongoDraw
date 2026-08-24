@@ -67,7 +67,8 @@ project means adding a fourth exclude.
 | `LibraryLoadState` | Whether a re-walk may keep the pool the screen is already showing |
 | `Data/Settings` | The persisted settings document and its LiteDB store |
 
-Ten domain objects, deliberately: what each one is and why the neighbours it absorbed are not
+Ten catalogued objects, nine of them Core types today (`SessionRecord` is still proposed),
+deliberately: what each one is and why the neighbours it absorbed are not
 separate concepts is [DOMAIN-MODEL.md §1](DOMAIN-MODEL.md) and [§9](DOMAIN-MODEL.md#9-consolidation).
 
 `BitmapMath`, `GridContrast`, `LoadGeneration` and `LibraryLoadState` are **not** among those ten and
@@ -119,12 +120,17 @@ deliberate decision, not a drive-by refactor.
 Core never imports Android. Where it needs something the platform provides, it takes it as a
 constructor parameter. Three patterns already in use — reuse them rather than inventing a fourth:
 
+One carve-out, stated so it is not mistaken for drift: the *form* of the persisted reference —
+that it is a `content://` tree URI — is domain knowledge and lives in `LibraryReference`. Core
+recognises that shape and never constructs, resolves, or queries one; `DocumentsContract`,
+`ContentResolver`, `Cursor` and `Uri` still stop at the adapter.
+
 **Interface adapter.** `IDocumentTree` describes "list the children of a folder document".
 `LibraryLoader.ContentResolverDocumentTree` backs it with `DocumentsContract` + `ContentResolver`;
 tests back it with an in-memory tree.
 
 **Injected delegate.** `DrawingSession<TImage>` takes `Func<string, TImage?> load`. The screen
-passes `LoadBitmap`; tests pass a fake. The generic parameter is what keeps `Bitmap` out of Core.
+passes `LoadPose`; tests pass a fake. The generic parameter is what keeps `Bitmap` out of Core.
 
 **Injected clock.** `DrawingSession<TImage>` takes an optional `Func<TimeSpan>? clock`, defaulting
 to a `Stopwatch`, and drives both its clocks — the drawing-time total and the pose countdown — from
@@ -136,16 +142,21 @@ under test.
 
 ## 5. State and navigation
 
-- **Session state** lives in the single `DrawingSession<Bitmap>` owned by `SessionActivity`, created
+- **Session state** lives in the single `DrawingSession<PoseImage>` owned by `SessionActivity`, created
   in `OnCreate` from intent extras. The setup pane holds no session: it evaluates a *draft* one per
-  keystroke (`DrawingSession<Bitmap>.Evaluate`), which copies no pool and starts no clock.
+  keystroke (`DrawingSession<PoseImage>.Evaluate`), which copies no pool and starts no clock.
 - **Screen-to-screen handoff** is intent extras only. `SessionActivity` declares its keys as public
   constants (`ExtraPool`, `ExtraSeconds`, `ExtraCount`, `ExtraBreak`, `ExtraShuffle`,
   `ExtraGrayscale`, `ExtraKeepAwake`, `ExtraChime`); `MainActivity.StartSession` fills them. Add a new input by adding a constant, not a string literal
   at the call site, and not a static or singleton.
 - **Persisted state** is the single `Settings` LiteDB document. It seeds the setup inputs on launch
   and records the last folder — which is both what a launch restores and where the picker reopens
-  (`MainActivity.RememberedTree` / `LastPickedDocumentUri`). `Android.Provider` also declares a `Settings`, so `MainActivity`
+  (`MainActivity.RememberedTree` / `LastPickedDocumentUri`). It is written where each value
+  changes (for folder picks, only after a successful load) and again in `OnPause` (which first
+  captures the typed inputs, the only values living nowhere else), since a swipe off the recents
+  list never reaches `OnDestroy`. `Settings.Save`
+  checkpoints, so a value that has been saved is in the datafile rather than only in the
+  write-ahead log — see §6. `Android.Provider` also declares a `Settings`, so `MainActivity`
   carries a `using Settings = FigureDrawing.Data.Settings;` alias.
 - **(confirm)** Session state is *not* currently saved in `OnSaveInstanceState`, so process death
   restarts the pose. That is a known gap, not a pattern to copy. `SessionActivity` mitigates the
@@ -159,13 +170,31 @@ under test.
 - `Settings` is `IDisposable` and is disposed in `OnDestroy`. It is a single-document store —
   `Id == 1` in the `settings` collection — opened with `Settings.Open(path)` and written with
   `Save()`. Saving through a disposed instance throws rather than dropping the write silently.
+- `Save()` checkpoints before returning, so a save that returned is a save that survives a kill
+  (`INV-STO-5`). LiteDB is write-ahead logged: an upsert alone leaves the value in `<name>-log.db`,
+  and a process killed mid-write can leave that log truncated — which does *not* fail to open, it
+  reads back as the values from before the save. That is a preference silently reverting with
+  nothing thrown and nothing logged, and it is what "the app forgot my folder" looks like.
+- `Save()` is a no-op when nothing has changed, so calling it on every pause costs nothing.
 - New preferences are new properties on `Settings` with a default value. Do not add a second
   document or a second collection without a reason.
 
 ## 7. Threading
 
-- Core is synchronous by design and stays that way (`INV-X-9`). The Android layer has exactly one
-  piece of background work: `LibraryLoader`, which reads a reference library off the UI thread.
+- Core is synchronous by design and never threads, sleeps or posts (`INV-X-9`). Two screens do
+  background work, and nothing else does. The player decodes reference images off the UI thread —
+  the session's own construction (`BuildSession`, which resolves the first pose) and the next pose
+  while the current one is up (`PrefetchUpcoming` / `DecodeAhead`). The setup screen reads a
+  reference library off it (`LibraryLoader`): the folder walk and up to 24 preview decodes.
+  Everything else runs on the main thread.
+- **One decode at a time per screen.** The prefetch holds a single slot (`prefetchTask`), and a
+  request while it is occupied is dropped rather than queued — the slot re-aims itself when the
+  decode settles. Without that bound, every command that changes which image is next starts another
+  decode, and a few quick taps put several full-size decodes in flight at once. The library load has
+  the same property by a different route: one load runs at a time and a newer one supersedes it.
+- A boundary that arrives before the decode finishes **waits for it** rather than starting a second
+  one. Blocking the main thread on a `Task.Run` that captured no synchronization context cannot
+  deadlock, and the wait is bounded by what is left of a decode already in progress.
 - Android UI objects may only be touched on the main thread. `SessionActivity`'s repaint loop uses
   `Handler(Looper.MainLooper)`, so it already is.
 - The repaint `Handler` posts and removes **one stored `Java.Lang.IRunnable`**. Posting an `Action`
@@ -174,8 +203,9 @@ under test.
 - Countdown time comes from a monotonic clock, never from counting ticks. A slow or dropped repaint
   must not change how much time a pose gets.
 
-**The shape for background work**, settled by FD-009 and the pattern FD-010 copies rather than
-reinventing. `LibraryLoader` is the worked example.
+**The shape for background work.** `SessionActivity.PrefetchUpcoming` / `DecodeAhead` /
+`CancelPrefetch` and `LibraryLoader` are the two worked examples; a third piece of background work
+follows this or argues why not.
 
 - One `async Task` method in the Android layer wrapping **one** `Task.Run`. Never `async void`: an
   exception after the first await in an `async void` is rethrown on the looper and kills the process,
@@ -212,6 +242,28 @@ reinventing. `LibraryLoader` is the worked example.
   cannot unblock a call already in flight, so a provider that never answers parks a pool thread
   until it does. The screen stays responsive, which is the property that matters — but do not read
   the abandonment rule as a guarantee that the work has stopped.
+- **The stored-runnable rule above is about the repeating repaint queue, not about every callback.**
+  A one-shot background result comes back through the `await` continuation, which Android's
+  synchronization context posts to the same main looper. That continuation is deliberately *not*
+  removable, and must not be made so: it is the code that frees a bitmap nobody wants any more, so a
+  `RemoveCallbacks` that succeeded would strand the pixels with nothing left to release them. What
+  makes it safe instead is the generation counter compared after the `await`.
+- **Never `ConfigureAwait(false)` in an Activity.** The continuation touches views and the fields
+  that own bitmaps; resuming it on a pool thread makes every one of those a race. It is also the
+  memory barrier that publishes decoded pixels to the thread that attaches them.
+- A decode already running cannot be stopped, so "cancel" means "abandon the result", not "abort the
+  work". A `CancellationToken` still earns its place where the work has not started:
+  `ImageDecoding.DecodeSampledBitmap` checks one between its bounds pass and its decode pass, which
+  is where the multi-megabyte allocation begins. The player passes one; the library load bounds the
+  same cost by checking its generation per cursor row and per image instead. Abandoning must not
+  clear the prefetch slot — the work is still running, and a free slot would let the next repaint
+  start a second decode beside it.
+- The whole body of an `async void` method is wrapped, not just the `await`. What follows the await
+  is JNI calls on peers that teardown may already have disposed, and an exception escaping there
+  lands on the main looper with nothing above it to catch (`INV-X-11`).
+- Work handed to the pool sets `ThreadPriority.Background` on entry and restores the previous value
+  in a `finally`: a ThreadPool worker starts at normal priority and would compete with the UI thread
+  it exists to protect, but it is shared, so it must not be left demoted.
 
 ## 8. Lifecycle and resources
 
@@ -219,8 +271,10 @@ reinventing. `LibraryLoader` is the worked example.
   drawer's own pause is still in effect (`INV-CD-8`). A backgrounded app must not burn pose time or
   fire a timer while hidden, and must not come back running from a pause the drawer asked for.
 - `OnDestroy` stops the loop, clears `KeepScreenOn`, and disposes anything it owns.
-- Every queued callback must be removable, and every listener attached to a long-lived object must
-  be detached.
+- Every callback queued on the repaint `Handler` must be removable, and every listener attached to a
+  long-lived object must be detached. The one exception is the one-shot `await` continuation of §7,
+  which is deliberately not removable — it is the code that frees a bitmap nobody wants, so removing
+  it would strand the pixels — and is made safe by a generation counter instead.
 - Images are always decoded through `ImageDecoding.DecodeSampledBitmap`, never via `SetImageURI`.
   It picks a power-of-two `InSampleSize` (`BitmapMath.CalculateCropSampleSize`) from two rules: a
   request floor, which keeps the SHORT side at or above the requested size for centre-cropped tiles
@@ -244,7 +298,11 @@ reinventing. `LibraryLoader` is the worked example.
   them until they are attached: repointing an `ImageView` recycles the one it replaces, and
   `OnDestroy` detaches and frees whatever is still attached. A decoded preview is therefore always
   owned by exactly one of the two, never both and never neither: `LibraryLoader` frees anything the
-  grid did not take, including everything an abandoned load decoded. A JNI global ref keeps a Bitmap alive
+  grid did not take, including everything an abandoned load decoded. The player screen has a
+  **second** owner of its own — the one-entry prefetch cache, holding a pose nothing has attached
+  yet — freed on every way out of the screen, plus a third transient one in a decode whose result
+  arrived too late to want. Its steady-state peak is therefore two full-size poses, not one, which
+  is part of what the decode bound below is budgeted against. A JNI global ref keeps a Bitmap alive
   until a managed GC plus finalizer pass, which is far too late under a session's decode rate.
 - A single unreadable image must never sink the screen: decode failures return `null` and are
   logged, and the session skips past them with a bounded failure budget.
@@ -252,9 +310,9 @@ reinventing. `LibraryLoader` is the worked example.
 ## 9. Errors and logging
 
 - All logs go through `Android.Util.Log` with the tag constant `LogTag = "FigureDrawing"`.
-- Anything crossing the system boundary — SAF results, URI permission grants, image decoding,
-  building a picker hint from a persisted tree URI — is wrapped in `try`/`catch`, logged, and
-  turned into a visible message rather than a crash.
+- Anything crossing the system boundary — SAF results, URI permission grants, launching the
+  picker, image decoding, building a picker hint from a persisted tree URI — is wrapped in
+  `try`/`catch`, logged, and turned into a visible message rather than a crash.
   `MainActivity.OnActivityResult` is the reference example.
 - Catching broad `Exception` is acceptable at those boundaries, and only there. Elsewhere, catch the
   specific type or let it throw.
@@ -281,19 +339,26 @@ type owns several invariant families: the session aggregate has one file per fam
 is what keeps a suite of this size navigable after the consolidation.
 
 **Contract tests** (`UiResourceContractTests`, `SessionScreenContractTests`, `TypefaceContractTests`,
-`FolderMemoryContractTests`, `LibraryLoadContractTests`, `AndroidBuildTests`) —
+`SourceContractTests`, `CrossActivityContractTests`, `FolderMemoryContractTests`,
+`LibraryLoadContractTests`, `AndroidBuildTests`) —
 a pattern worth understanding before touching the Android layer. They parse the *source and XML as
 files* rather than running them, so they need no device but still catch the runtime-only failures
 that Xamarin's compile-time checks miss: a view id referenced from code but absent from the layout,
 a missing string, a build property regression. `TestPaths` locates the repo root by walking up to
 `FigureDrawing.sln`, since the working directory differs between `nx` and `dotnet test`.
 
-A contract test reads *code*, not prose: `SourceShape` strips comments and string literals, and
-brace-matches a named method's body, before anything is asserted — because an assertion a comment
-can satisfy stays green through the deletion it exists to catch. It normalises line endings on read
-(`core.autocrlf` is on, and .NET's multiline `$` never anchors before `\r\n`) and is tested directly
-in `SourceShapeTests`, since two suites now depend on it. Assert which API a method reaches, never how a statement
-is spelled — pinning a local's name or a pattern's syntax fails a refactor that still behaves.
+A contract test reads *code*, not prose: `SourceContract` (shared by `FolderMemoryContractTests`,
+`SessionScreenContractTests`, `CrossActivityContractTests` and `LibraryLoadContractTests`,
+and tested itself in
+`SourceContractTests`) strips comments and string
+literals before anything is asserted, because an assertion a comment can satisfy stays green
+through the deletion it exists to catch — and one a comment can *break* fails a build that behaves.
+It also normalises line endings, since its declaration matcher anchors on end-of-line and a CRLF
+checkout would otherwise find no methods at all. It reads block bodies, not expression-bodied
+members, so anything the tier needs to assert on is written with braces. Assert the APIs a method reaches and the wiring between
+the screen's own methods; never a local's name, a literal's spelling, or a pattern's syntax — those
+fail a refactor that still behaves. Code inside an interpolation hole is stripped with its string:
+a method named in a log message is not wiring.
 
 **E2E-model tests** (`SessionE2ETests.cs`) — drive the Core objects through a whole session in one
 test, without Android: the library enumerates a fake tree, the draft produces the config, and the
@@ -453,7 +518,7 @@ Four contexts, each a cohesive vocabulary with its own rules. All four live in
 
 | Context | Owns | Core types today | Namespace / folder |
 |---|---|---|---|
-| **Reference Library** | Discovering drawable images under a picked folder; what counts as an image; the pool; whether the folder the artist last picked is still usable | `ReferenceLibrary`, `IDocumentTree`, `DocumentEntry`, `LibraryReference` / `PersistedGrant` (shared with Preferences, which stores the reference this context judges) | `FigureDrawing.Core` (root) |
+| **Reference Library** | Discovering drawable images under a picked folder; what counts as an image; the pool; whether the remembered folder is still usable | `ReferenceLibrary`, `IDocumentTree`, `DocumentEntry`, `LibraryReference`, `PersistedGrant` | `FigureDrawing.Core` (root) |
 | **Session Setup** | Parsing and validating the two inputs; the Start gate; producing a config | `SessionSetup`, `SessionConfig`, and the session's `Draft` phase | `FigureDrawing.Core` (root) |
 | **Session Execution** | Running a session: sequence, passes, counts, skip semantics, time accounting, per-pose countdown, breaks, resolving an id to a displayable image, the totals, the viewing aids | `DrawingSession<TImage>`, `ViewerTools` | `FigureDrawing.Core/Session` |
 | **Preferences** | The persisted settings document and its lifecycle | `Settings` | `FigureDrawing.Core/Data` |
@@ -501,8 +566,10 @@ change:
   interprets a content URI. That opacity is what lets tests pass `"a"`, `"b"`, `"c"`.
 - **Storage Access Framework → Reference Library — anti-corruption layer.** `IDocumentTree` +
   `DocumentEntry` are the ACL. `DocumentsContract`, `ContentResolver`, and `Cursor` stop at
-  `LibraryLoader.ContentResolverDocumentTree`. Nothing SAF-shaped may cross into Core — that is
-  §4's interface-adapter pattern stated as a context rule.
+  `LibraryLoader.ContentResolverDocumentTree` — that is §4's interface-adapter pattern stated as a
+  context rule. One carve-out, stated rather than drifted into: the *form* of the reference this app
+  persisted is domain knowledge, so `LibraryReference` recognises a `content://` tree URI while
+  still never constructing, resolving, or querying one (`INV-TREE-1`, `INV-REF-1`).
 - **Preferences → Setup — open host, one direction.** Settings seed the inputs and record the last
   folder. Neither Session Setup nor Session Execution reads `Settings` at runtime; the Android layer
   copies the values it needs into intent extras at launch (§5).
@@ -517,7 +584,9 @@ change:
 
 **Aggregate root: `DrawingSession<TImage>`.** It is the consistency boundary for everything about
 the run — the upcoming queue, `CompletedCount`, the drawing-time total and both clocks are only ever
-mutated through `Next` / `Skip` / `End` / `Tick` / `Pause(PauseReason)` / `Resume`, and no caller can observe them
+mutated through `Next` / `Skip` / `End` / `Tick` / `Pause(PauseReason)` / `Resume` — with one stated
+exception, `UpcomingImageId`, which may refill a drained pass in order to answer (`INV-PLY-7`) and
+changes nothing else — and no caller can observe them
 mid-transition. Its identity is positional (one live session per player screen), so it carries no
 id: a session is never stored, never compared, and never resumed. That is the reason it has no
 repository, and adding one would be the signal that the model changed, not a convenience.
@@ -528,6 +597,7 @@ repository, and adding one would be the signal that the model changed, not a con
 | `SessionConfig` | Value object (`readonly record struct`) | Immutable, validated upstream |
 | `SessionPhase` | Enum | `Draft` → `Pose` ⇄ `Break` → `Complete` |
 | `PauseReason` | Enum | Why the clocks stopped: `Lifecycle` (screen hidden) vs `User` (the drawer asked). `INV-CD-8` |
+| `SessionTick` | Enum | What a tick did: `None`, `PoseStarted`, `BreakStarted`, `Completed`. A return value, not a concept with a lifetime. `INV-SES-13` |
 | `ViewerTools` | Entity | Owns the viewing aids and the zoom range; touches nothing the session counts |
 | image id (`string`) | Primitive standing in for a value object | See "candidate: `ImageRef`" below |
 
@@ -538,6 +608,9 @@ test in the `DrawingSession*Tests` files, which are split by invariant family (�
 |---|---|
 | `Remaining` is never negative; `CompletedCount` never exceeds `TargetCount` | `Next` finishes at the target; `Remaining` clamps |
 | Every image is shown once before any repeat | `Refill` rebuilds a full pass before dequeuing |
+| A tick reports the transition it made | `Tick` returns `SessionTick`, read off the phase it left behind |
+| The next id can be asked for without consuming it | `UpcomingImageId` peeks the queue; refilling a drained pass is its one mutation |
+| An unreadable image is loaded once per session | `Resolve` consults `_unreadable` before calling the loader |
 | Skip never advances `CompletedCount` and never banks time | `SkipCurrent` advances the sequence; time is banked only in `CountCurrent` and `End` |
 | `End` banks the current partial time but does not count the pose | `End` accumulates, then `Finish` |
 | Drawing time excludes all skipped time | Time is banked only in `Next` and `End` |
@@ -597,7 +670,7 @@ Android layer binds a button's `Enabled` to it and owns nothing else. Parsing li
 keeping it out of the `EditText` handler is what makes it testable.
 
 The cost of that merge is one odd-looking call: `MainActivity` says
-`DrawingSession<Bitmap>.Evaluate(...)` on a screen that never touches a bitmap. That was the
+`DrawingSession<PoseImage>.Evaluate(...)` on a screen that never touches a bitmap. That was the
 accepted trade for deleting a type whose only job was to hold four fields.
 
 ### Preferences
@@ -683,16 +756,24 @@ resolving an id to an image is no longer a separate service the screen wires up.
 
 Live findings, ordered by how much they cost. None is a blocker; each has a stated trigger.
 
-1. **`MainActivity` spans three contexts** — Reference Library (SAF picking, the thumbnail grid),
-   Session Setup (inputs, preset chips, Start gate), Preferences (opening the database, loading and
-   saving settings). The Claude Design import made this literal: the three contexts are now the three
-   tabs of one screen. Not a god object at this size, but it is the only class in the codebase that
-   touches three contexts, so it is where the next rule will be tempted to land.
+1. **`MainActivity` spans three contexts** — Reference Library (SAF picking, the library, the
+   thumbnail grid), Session Setup (inputs, preset chips, Start gate), Preferences (opening the
+   database, loading and saving settings). The Claude Design import made this literal: the three
+   contexts are now the three tabs of one screen. Not a god object at this size, but it is the only
+   class in the codebase that touches three contexts, so it is where the next rule will be tempted
+   to land.
 
-   **Partly closed by FD-009**, which took the first split this finding asked for: the folder walk,
-   the preview decodes, the SAF adapter and the abandonment guard now live in `LibraryLoader`, and
-   the Activity keeps view wiring and lifecycle. Settings-syncing is the remaining candidate; split
-   it on the next feature that touches it.
+   *Deferred once, deliberately (remembered-folder work).* That change added `OnPause`,
+   `SaveSettings`, `CaptureTypedInputs`, `RememberedTree`, `LastPickedDocumentUri`,
+   `PersistedGrants`, `ReleaseSupersededGrants`, `RefreshGrant` and `ShowRememberedFolderUnavailable`
+   to this class, and moved every *rule* it could into `LibraryReference` instead of splitting the
+   screen.
+
+   **Partly closed by FD-009**, which took the first split: the folder walk, the preview decodes,
+   the SAF adapter and the abandonment guard now live in `LibraryLoader`, and the Activity keeps
+   view wiring and lifecycle. Settings-syncing is the remaining candidate, and the trigger stands —
+   the next feature that adds a method here which is neither view wiring nor a one-line call into
+   Core does that split first.
 2. ~~The pose-restart rule lives in an Activity~~ — closed by the session aggregate (§17).
 3. ~~`SettingsStore` has no port interface~~ — closed by merging it into `Settings` (§17): there was
    no second implementation to justify the seam. `Settings` still carries a LiteDB attribute, and
@@ -701,27 +782,40 @@ Live findings, ordered by how much they cost. None is a blocker; each has a stat
    aggregate has no identity and no repository, which is exactly why rotation restarts a pose. If
    FD-008's rotation handling requires survival, that is the point at which `DrawingSession` gains
    an id and a snapshot/restore pair, not a `static`.
-5. **The draft phase is generic for no reason of its own** (§17) — `DrawingSession<Bitmap>.Evaluate`
+5. **The draft phase is generic for no reason of its own** (§17) — `DrawingSession<PoseImage>.Evaluate`
    on a screen with no bitmaps. Harmless, and cheaper than keeping a type to avoid it, but it is the
    one place the merged model reads worse than what it replaced.
 6. **Zoom carries across poses.** `ViewerTools.ResetZoom` exists and nothing calls it, so a 2.5×
    zoom set for one pose is still applied to the next. `INV-VIEW-4` was written to match the code
    rather than the other way round; wiring the reset into the phase change is a one-line UX decision
    nobody has made.
-7. **Known Android-layer costs, all pre-dating the consolidation** — image decoding still runs on the
-   main thread in the repaint loop at a pose boundary, and persisted folder grants are taken and
-   never released. Neither is a Core concern; the decoding cost is specified in
-   [FD-010](prds/FD-010-pose-decode-off-the-tick.md), which follows the background-work shape §7 now
-   records. The folder walk's half of this was closed by
-   [FD-009](prds/FD-009-async-reference-library.md).
+7. ~~**Image decoding runs on the main thread**~~ — closed on both sides. The player screen's half
+   went with [FD-010](prds/FD-010-pose-decode-off-the-tick.md) (the next pose is decoded during the
+   current one), and the folder walk's half with
+   [FD-009](prds/FD-009-async-reference-library.md) (the walk and up to 24 preview decodes moved off
+   the UI thread). Grants are no longer accumulated either: picking a different folder releases the
+   ones it supersedes and a restore re-takes the one in use (`INV-REF-4`).
 
-   Two entries that used to sit here are closed: the pool no longer crosses to the player whole (it
-   is sampled to a bounded handoff, `INV-POOL-6`), and decoded bitmaps are now recycled by the screen
-   that decoded them.
+   Three entries that used to sit here are closed: the pool no longer crosses to the player whole
+   (it is sampled to a handoff bounded by the session's own length, `INV-POOL-6`), decoded bitmaps
+   are recycled by the screen that decoded them, and the player screen no longer decodes on the UI
+   thread at all — the next pose is decoded during the current one, the session's construction (and
+   with it the first pose) happens off the thread too, and an unreadable file is loaded once per
+   session rather than once per pass (`INV-PLY-7`, `INV-PLY-8`, FD-010).
+
+   What is left there, stated precisely because "no longer decodes on the boundary" is easy to
+   over-claim: a boundary that arrives mid-decode *waits* for the decode it already started, and a
+   boundary that skips past an unreadable id decodes the replacement itself, because only one image
+   is ever decoded ahead. Both are bounded — the first by what remains of a decode in progress, the
+   second by one image — and neither is the unbounded run the old code had. The failure budget is
+   also now the player's explicit `pool.Length * 2` rather than the implicit 100: with `INV-PLY-8`
+   the *decodes* in a hopeless run are capped by the pool rather than by the budget, but the budget
+   is larger than it was, so a wholly unreadable folder does more work before the error screen than
+   it used to. It does that work off the UI thread.
 
 ## 21. Testing the model, and what "done" looks like
 
-The three tiers of §11 map cleanly onto the model, and the mapping is the rule for where a new test
+The four tiers of §11 map cleanly onto the model, and the mapping is the rule for where a new test
 goes:
 
 - **Aggregate invariants** (the §17 table) → unit tests, one file per Core type, with injected

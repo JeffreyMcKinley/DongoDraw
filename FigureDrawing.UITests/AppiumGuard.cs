@@ -105,7 +105,9 @@ internal sealed class AppiumGuard(AndroidDriver driver)
 
     // Runs a lookup with the implicit wait switched off. FindElements honours the session's 10s
     // implicit wait, so an "is it there right now?" probe would otherwise burn the whole budget of
-    // whatever loop it sits in — and a WaitUntil around it would never get a second poll.
+    // whatever loop it sits in — and a WaitUntil around it would never get a second poll. Wrap the
+    // whole wait, never each poll: the timeout is read and written over the wire, so per-poll
+    // nesting costs three round trips per attempt.
     T Probe<T>(Func<T> lookup)
     {
         var timeouts = Driver.Manage().Timeouts();
@@ -137,12 +139,12 @@ internal sealed class AppiumGuard(AndroidDriver driver)
     // walk-into step needs: "the row is missing" alone is equally consistent with the picker sitting
     // somewhere else entirely, and confirming from there grants the wrong folder.
     public bool PickerIsInside(string folderName, TimeSpan timeout) =>
-        WaitUntil(d => Probe(() => d.FindElements(PickerTitle(folderName)).Count > 0), timeout);
+        Probe(() => WaitUntil(d => d.FindElements(PickerTitle(folderName)).Count > 0, timeout));
 
     // Whether the picker is listing a row with this exact text — a file or a subfolder, never the
     // toolbar. Used to assert what the picker is showing.
     public bool PickerShowsRow(string text, TimeSpan timeout) =>
-        WaitUntil(d => Probe(() => d.FindElements(PickerRow(text)).Count > 0), timeout);
+        Probe(() => WaitUntil(d => d.FindElements(PickerRow(text)).Count > 0, timeout));
 
     // Taps a folder row in the picker, scrolling to it if the list is long. Returns false when no
     // such row is listed — which is the ordinary outcome once the app starts the picker inside that
@@ -242,9 +244,8 @@ internal sealed class AppiumGuard(AndroidDriver driver)
             return;
         }
 
-        Assert.True(
-            WaitUntil(_ => LibraryCount() == expected, TimeSpan.FromSeconds(10)),
-            $"Granted folder holds {LibraryCount()} images, seeded {expected} — wrong folder granted.");
+        if (!WaitUntil(_ => LibraryCount() == expected, TimeSpan.FromSeconds(10)))
+            Assert.Fail($"Granted folder holds {LibraryCount()} images, seeded {expected} — wrong folder granted.");
     }
 
     // Clicks a fully-qualified id once it appears, waiting up to the timeout. The picker's confirm
@@ -254,7 +255,7 @@ internal sealed class AppiumGuard(AndroidDriver driver)
     {
         var by = MobileBy.Id(fullId);
 
-        if (!WaitUntil(d => Probe(() => d.FindElements(by).Count > 0), timeout))
+        if (!Probe(() => WaitUntil(d => d.FindElements(by).Count > 0, timeout)))
         {
             Console.WriteLine($"no '{fullId}' within {timeout.TotalSeconds}s");
             return;
@@ -324,14 +325,24 @@ internal sealed class AppiumGuard(AndroidDriver driver)
     public bool WaitForAnyThumbnail(TimeSpan timeout) =>
         WaitUntil(_ => ThumbnailCount() > 0, timeout);
 
-    // The number the library pane is showing ("{0} images ready"), or -1 when it shows nothing yet.
+    // The number the library pane is showing, or -1 when it shows nothing yet. The label's wording
+    // belongs to strings.xml ("{0} images ready" today), so the digits are found wherever they sit
+    // rather than assumed to lead — a reword must not read as "wrong folder granted".
     public int LibraryCount()
     {
         var labels = Probe(() => Driver.FindElements(MobileBy.Id(UiTestEnvironment.ViewId("library_count"))));
         if (labels.Count == 0)
             return -1;
 
-        var digits = new string(labels[0].Text.TakeWhile(char.IsDigit).ToArray());
-        return digits.Length > 0 ? int.Parse(digits) : -1;
+        var text = labels[0].Text ?? string.Empty;
+        var digits = System.Text.RegularExpressions.Regex.Match(text, @"\d+");
+
+        if (!digits.Success)
+        {
+            Console.WriteLine($"library_count reads '{text}' — no number in it.");
+            return -1;
+        }
+
+        return int.Parse(digits.Value);
     }
 }

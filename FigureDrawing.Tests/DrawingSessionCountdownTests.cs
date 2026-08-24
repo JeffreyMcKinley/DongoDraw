@@ -221,7 +221,7 @@ public class DrawingSessionCountdownTests
         session.Resume();
 
         Assert.False(session.IsPaused);
-        Assert.True(session.Tick());
+        Assert.Equal(SessionTick.PoseStarted, session.Tick());
         Assert.Equal(1, session.CompletedCount);
         Assert.True(session.TotalDrawingTime <= TimeSpan.FromSeconds(10));
     }
@@ -378,7 +378,7 @@ public class DrawingSessionCountdownTests
 
         session.Next();            // into the break
         clock.Advance(15);
-        Assert.True(session.Tick());
+        Assert.Equal(SessionTick.PoseStarted, session.Tick());
 
         Assert.False(session.OnBreak);
         Assert.Equal(TimeSpan.FromSeconds(30), session.PhaseDuration);

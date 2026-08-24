@@ -55,7 +55,7 @@ public class SessionSetupUiTests(AppiumAppFixture app, ITestOutputHelper output)
         if (Ready() is not { } g) return;
 
         UiTestEnvironment.SeedDefaultFolder(imageCount: 3);
-        g.SelectDefaultFolder();
+        g.SelectDefaultFolder(expectImages: 3);
         g.OpenTab("tab_session");
 
         Assert.True(g.FindById("start_button").Enabled,
@@ -69,7 +69,7 @@ public class SessionSetupUiTests(AppiumAppFixture app, ITestOutputHelper output)
         if (Ready() is not { } g) return;
 
         UiTestEnvironment.SeedDefaultFolder(imageCount: 3);
-        g.SelectDefaultFolder();
+        g.SelectDefaultFolder(expectImages: 3);
         g.OpenTab("tab_session");
         Assert.True(g.FindById("start_button").Enabled);
 

@@ -472,4 +472,51 @@ public class ReferenceLibraryTests
     [Fact]
     public void Sample_OfAnEmptyLibraryIsEmpty() =>
         Assert.Empty(ReferenceLibrary.Empty.Sample(10, new Random(1)));
+
+    // A provider that throws is the state a remembered folder hits when its volume is unmounted or
+    // its provider is gone — the screen catches it and shows the remembered-but-unreachable message.
+    // What must not happen is a half-built pool surviving underneath that message: Start would open
+    // on images the session cannot read (INV-POOL-1, INV-X-11).
+    sealed class FailableTree : IDocumentTree
+    {
+        public bool Failing { get; set; }
+
+        public IEnumerable<DocumentEntry> GetChildren(string parentDocumentId)
+        {
+            if (Failing)
+                throw new InvalidOperationException("provider gone");
+
+            yield return new DocumentEntry("a.jpg", "image/jpeg");
+            yield return new DocumentEntry("b.jpg", "image/jpeg");
+        }
+    }
+
+    [Fact]
+    public void ATreeThatThrowsAtTheRoot_NeverBuildsALibrary()
+    {
+        var tree = new FailableTree { Failing = true };
+
+        Assert.Throws<InvalidOperationException>(() => new ReferenceLibrary(tree, "root"));
+    }
+
+    [Fact]
+    public void ATreeThatStartsThrowing_LeavesThePreviousPoolIntact()
+    {
+        var tree = new FailableTree();
+        var library = new ReferenceLibrary(tree, "root");
+        var pool = library.Pool;
+
+        Assert.Equal(2, pool.Count);
+
+        tree.Failing = true;
+
+        // A re-walk is a *new* library, not a second walk on the live one (FD-009 made Enumerate
+        // private for exactly this reason), so a provider that starts throwing cannot reach the pool
+        // the screen is already showing: the failure happens while building the replacement, and the
+        // replacement is never assigned. The screen catches it and shows the unavailable message,
+        // with the pool it had still whole underneath (INV-POOL-1, INV-X-11).
+        Assert.Throws<InvalidOperationException>(() => new ReferenceLibrary(tree, "root"));
+        Assert.Same(pool, library.Pool);
+        Assert.Equal(2, library.Count);
+    }
 }

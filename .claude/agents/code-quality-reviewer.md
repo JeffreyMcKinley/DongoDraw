@@ -56,10 +56,13 @@ Read surrounding context from unchanged files as needed, but do not report findi
 
 **C# / .NET Android Considerations**
 
-- `async` methods return `Task`/`Task<T>`, never `async void` outside event handlers
+- `async` methods return `Task`/`Task<T>`, never `async void` outside event handlers — with one
+  sanctioned exception, the player screen's fire-and-forget decode continuations (`BuildSession`,
+  `DecodeAhead`), which nothing awaits and whose whole bodies are wrapped so nothing escapes to the
+  looper (ARCHITECTURE.md §7)
 - UI-thread affinity: Android UI mutations must happen on the main thread — but a method that already
   resumes on the main-looper `SynchronizationContext` after an `await` must NOT wrap its continuation
-  in a redundant `RunOnUiThread` (ARCHITECTURE.md §7)
+  in a redundant `RunOnUiThread`, and never `ConfigureAwait(false)` in an Activity (ARCHITECTURE.md §7)
 - Activity/Fragment lifecycle correctness — state saved in `OnSaveInstanceState`; resources released
   in `OnPause`/`OnStop`/`OnDestroy` as the resource requires. View-held bitmaps in `MainActivity`'s
   reference grid are released in `OnStop`, because the screen is stopped and not destroyed while a
@@ -125,19 +128,22 @@ a layering scheme the project has not adopted.
   `LiteDatabase` (`INV-STO-1`). One document, `Id == 1`, in the `settings` collection; the store
   stamps the id, callers never do. New preferences are new defaulted properties on `Settings`,
   not a second document or collection. No BSON or LiteDB vocabulary above the store.
-- **Threading model**: Core is synchronous by design — nothing in the domain sleeps, posts,
-  schedules, or starts a thread (`INV-X-9`). The Android layer has exactly one piece of background
-  work, `LibraryLoader`, which reads a reference library off the UI thread. Android UI objects are
-  touched on the main thread only; the repaint loop uses `Handler(Looper.MainLooper)` and
-  posts/removes **one stored `Java.Lang.IRunnable`** — a callback posted as an `Action` and
-  expected to be removable is a Critical leak. Countdown time comes from a monotonic clock, never
-  from counting ticks (`INV-CD-1`). Background work follows the shape in ARCHITECTURE.md §7: one
-  `async Task` wrapping one `Task.Run` over a `static` worker, results resuming on the main-looper
-  `SynchronizationContext` (no redundant `RunOnUiThread`), never blocked on with `.Result`/`.Wait()`,
-  and abandonable by generation counter in `OnStop`, `OnDestroy`, and wherever the screen
-  deliberately drops the work it is showing (`ResetLibrary`) — for the library load, never
-  `OnPause`, since a briefly backgrounded app must not come back to an empty library (`INV-X-13`).
-  Where that boundary sits is per-feature and must be argued, not copied.
+- **Threading model**: Core is synchronous by design and nothing in the domain sleeps, posts,
+  schedules, or starts a thread (`INV-X-9`). Two pieces of background work exist: the player screen
+  decodes reference images off the UI thread (the session's construction, and the next pose while
+  the current one is up), and `LibraryLoader` reads a reference library off it. Everything else runs
+  on the main thread. Android UI objects are touched on the main thread only; the repaint loop uses
+  `Handler(Looper.MainLooper)` and posts/removes **one stored `Java.Lang.IRunnable`** — a callback
+  posted as an `Action` and expected to be removable is a Critical leak. Countdown time comes from a
+  monotonic clock, never from counting ticks (`INV-CD-1`). Background work is marshalled back through
+  the `await` continuation (which the synchronization context posts to the same main looper — never
+  `ConfigureAwait(false)` in an Activity, and no redundant `RunOnUiThread`), is never blocked on with
+  `.Result`/`.Wait()`, and is abandoned by a generation counter compared after the await. *Where*
+  it is abandoned is per-feature and must be argued, not copied: the player prefetch at
+  `OnPause`/`OnDestroy`, the library load at `OnStop`/`OnDestroy` and wherever the screen
+  deliberately drops what it is showing (`ResetLibrary`) but never `OnPause`, since a briefly
+  backgrounded app must not come back to an empty library (`INV-X-13`). See ARCHITECTURE.md §7,
+  which is authoritative.
 - **Forbidden** — each of these is an architecture violation, not a style opinion:
   - A rule, calculation, or state machine implemented inside an Activity
   - `Android.*` / `Java.*` referenced from `FigureDrawing.Core`

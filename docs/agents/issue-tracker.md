@@ -1,8 +1,10 @@
 # Issue tracker: Local Markdown (`docs/prds/`)
 
 Issues and specs for this repo live as markdown files in `docs/prds/`, indexed by
-[`docs/prds/README.md`](../prds/README.md). There is no `gh` CLI in this environment and no
-GitHub Issues workflow — do not reach for one.
+[`docs/prds/README.md`](../prds/README.md). The `gh` CLI is installed and `origin` points at
+`github.com/JeffreyMcKinley/FigureDrawing`, so `gh pr` / `gh release` work — but there is no GitHub
+Issues workflow. Never file, read or close a ticket with `gh issue`; the markdown files are the
+tracker.
 
 ## Conventions
 

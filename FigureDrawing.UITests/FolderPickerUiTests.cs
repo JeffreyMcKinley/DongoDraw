@@ -1,3 +1,4 @@
+using OpenQA.Selenium.Appium.Android;
 using Xunit.Abstractions;
 
 namespace FigureDrawing.UITests;
@@ -66,6 +67,10 @@ public class FolderPickerUiTests(AppiumAppFixture app, ITestOutputHelper output)
 
         UiTestEnvironment.ResetAppState();
         g.Driver.ActivateApp(UiTestEnvironment.AppPackage);
+
+        // A cold start after a data wipe is slower than a resume; wait for the tab bar before
+        // reaching for anything inside a pane.
+        Assert.NotNull(g.WaitForId("tab_images", TimeSpan.FromSeconds(15)));
         g.OpenTab("tab_images");
 
         g.FindById("pick_button").Click();
@@ -155,6 +160,60 @@ public class FolderPickerUiTests(AppiumAppFixture app, ITestOutputHelper output)
         Assert.Empty(g.FindAllById("empty_label"));
     }
 
+    // The way a person actually closes the app: Back out of MainActivity, which finishes the
+    // Activity and runs the whole teardown — OnPause, OnDestroy, and the settings database being
+    // disposed — rather than having the process shot from under it. Reopening from the launcher must
+    // still come up on the same library.
+    [Fact]
+    public void PickedFolder_SurvivesTheArtistClosingTheApp()
+    {
+        if (Ready() is not { } g) return;
+
+        UiTestEnvironment.SeedDefaultFolder(imageCount: 4);
+        g.SelectDefaultFolder(expectImages: 4);
+
+        g.Driver.Navigate().Back();
+        Assert.True(
+            g.WaitUntil(d => d.CurrentPackage != UiTestEnvironment.AppPackage, TimeSpan.FromSeconds(10)),
+            "Back did not close the app.");
+
+        g.Driver.ActivateApp(UiTestEnvironment.AppPackage);
+        Assert.NotNull(g.WaitForId("tab_images", TimeSpan.FromSeconds(15)));
+
+        g.OpenTab("tab_images");
+
+        AssertAppAlive(g);
+        Assert.Empty(g.FindAllById("empty_label"));
+        Assert.Equal(4, g.LibraryCount());
+    }
+
+    // The reported failure: the app is backgrounded and its process is reclaimed — no OnPause, no
+    // OnDestroy, no clean close of the settings database. The pick must still be there on the next
+    // launch, which it only is because Save checkpoints rather than leaving the value in the
+    // write-ahead log (INV-STO-5).
+    [Fact]
+    public void PickedFolder_SurvivesTheProcessBeingKilled()
+    {
+        if (Ready() is not { } g) return;
+
+        UiTestEnvironment.SeedDefaultFolder(imageCount: 6);
+        g.SelectDefaultFolder(expectImages: 6);
+
+        // Background it first: `am kill` only reclaims a process that is not in the foreground,
+        // which is the shape the system uses and the shape a recents swipe leaves behind.
+        g.Driver.PressKeyCode(AndroidKeyCode.Keycode_HOME);
+        Thread.Sleep(1000);
+        UiTestEnvironment.KillAppProcess();
+
+        g.Driver.ActivateApp(UiTestEnvironment.AppPackage);
+        Assert.NotNull(g.WaitForId("tab_images", TimeSpan.FromSeconds(15)));
+        g.OpenTab("tab_images");
+
+        AssertAppAlive(g);
+        Assert.Empty(g.FindAllById("empty_label"));
+        Assert.Equal(6, g.LibraryCount());
+    }
+
     // Picking again starts where the artist left off: MainActivity passes the remembered folder as
     // EXTRA_INITIAL_URI, so the picker opens inside it rather than wherever it was last used.
     [Fact]
@@ -177,12 +236,17 @@ public class FolderPickerUiTests(AppiumAppFixture app, ITestOutputHelper output)
             g.WaitUntil(d => d.CurrentPackage != UiTestEnvironment.AppPackage, TimeSpan.FromSeconds(15)),
             "Picker never opened.");
 
+        // One definition of "started where we asked": the picker's own answer to which folder it is
+        // in. A seeded file being listed was the fallback and is a weaker claim — any location
+        // holding a file by that name satisfies it — so it survives only in the failure message.
         var folder = UiTestEnvironment.DefaultPickerFolderName;
-        var inside = g.PickerIsInside(folder, TimeSpan.FromSeconds(10))
-                     || g.PickerShowsRow(UiTestEnvironment.SeededImageName(0), TimeSpan.FromSeconds(5));
+        var inside = g.PickerIsInside(folder, TimeSpan.FromSeconds(10));
+        var listing = inside ? null : (g.PickerShowsRow(UiTestEnvironment.SeededImageName(0), TimeSpan.FromSeconds(2))
+            ? "a seeded file is listed, but the toolbar does not name the folder"
+            : "no seeded file is listed either");
 
         g.ReturnToMainScreen();
-        Assert.True(inside, $"Picker did not open inside '{folder}' — the remembered folder was not passed as the starting point.");
+        Assert.True(inside, $"Picker did not open inside '{folder}' — {listing}.");
     }
 
     // FD-009: the grid is released in OnStop and rebuilt in OnStart, so the player's decodes are not

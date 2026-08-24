@@ -15,12 +15,22 @@ namespace FigureDrawing
     // rather than decoded at full width.
     internal static class ImageDecoding
     {
+        // cancelled: checked between the two passes, which is where the multi-megabyte allocation
+        // starts. A decode already past that point runs to completion — the platform gives no way to
+        // stop it — so this bounds what an abandoned prefetch costs, it does not abort one.
         public static Bitmap? DecodeSampledBitmap(
-            ContentResolver resolver, Android.Net.Uri uri, int requestDimension, int maxDimension)
+            ContentResolver resolver,
+            Android.Net.Uri uri,
+            int requestDimension,
+            int maxDimension,
+            CancellationToken cancelled = default)
         {
             using var bounds = new BitmapFactory.Options { InJustDecodeBounds = true };
             using (var stream = resolver.OpenInputStream(uri))
                 BitmapFactory.DecodeStream(stream, null, bounds);
+
+            if (cancelled.IsCancellationRequested)
+                return null;
 
             using var options = new BitmapFactory.Options
             {

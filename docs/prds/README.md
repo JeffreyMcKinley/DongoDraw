@@ -11,19 +11,9 @@ renumber an id.
 
 ## Open
 
-| ID | Title | Context |
-|----|-------|---------|
-| [FD-010](FD-010-pose-decode-off-the-tick.md) | A pose boundary never blocks the repaint loop | Session Execution |
-| [FD-011](FD-011-tick-reports-what-changed.md) | The session says what changed, not just that something did | Session Execution |
+Nothing queued. FD-009..FD-013 all came out of the repo-wide review of 2026-08-16 and have shipped;
+what each left behind is below.
 
-FD-009, FD-010 and FD-011 all came out of the repo-wide review of 2026-08-16. FD-009 shipped first because it was the
-prerequisite in practice: it established how this app does background work and abandons it, and that
-shape is now written down in [ARCHITECTURE.md §7](../ARCHITECTURE.md#7-threading). **FD-010 still
-specifies the pre-FD-009 shape** (marshalling back through the ticker) and must be re-specified
-against §7 before it is picked up — including where its prefetch is abandoned, which is a different
-answer from the library's for the reason §7 gives. FD-011 is small and independent — a rule currently
-living in an Activity moving into Core — but it touches the same `Tick` call site as FD-010, so do it
-first if both are in flight.
 
 ## Shipped
 
@@ -40,8 +30,19 @@ Since then, with a committed ticket kept as the record of how it was built:
 |----|-------|-------------|
 | [FD-009](FD-009-async-reference-library.md) | The library loads off the UI thread | `INV-X-13`, `LibraryLoader`, `LoadGeneration`, `LibraryLoadState`, `LibraryLoadContractTests`, and the background-work shape in [ARCHITECTURE.md §7](../ARCHITECTURE.md#7-threading). Two acceptance criteria are open pending manual verification on a real device |
 
-**Remembering the folder** is an FD-001 follow-on rather than an id of its own: the library the
-artist last opened is restored on launch and is where the picker reopens. Its criteria are
-`INV-SET-P5` and `INV-X-11` in [DOMAIN-MODEL.md §5.1 / §7](../DOMAIN-MODEL.md), enforced by
-`LibraryReference` and covered by `LibraryReferenceTests`, `FolderMemoryContractTests` and the
-folder-memory tests in `FolderPickerUiTests`.
+[FD-011](FD-011-tick-reports-what-changed.md) (the session says what changed) and
+[FD-010](FD-010-pose-decode-off-the-tick.md) (a pose boundary never blocks the repaint loop) shipped
+together, FD-011 first because both touch the same `Tick` call site. Their criteria are `INV-SES-13`,
+`INV-PLY-7`, `INV-PLY-8` and the narrowed `INV-POOL-6` in [DOMAIN-MODEL.md](../DOMAIN-MODEL.md).
+FD-010 grew one part beyond its ticket: the handoff bound became a function of the session's length,
+because the failure budget it introduces is derived from the pool size.
+
+[FD-012](FD-012-remembered-folder.md) (the app remembers the folder you picked) shipped after the
+MVP set: the library the artist last opened is restored on launch, survives a process kill, and is
+where the picker reopens. Its criteria are `INV-REF-*`, `INV-SET-P4/P5`, `INV-GRP-5`, `INV-STO-5`
+and `INV-X-11` in [DOMAIN-MODEL.md](../DOMAIN-MODEL.md).
+
+[FD-013](FD-013-folder-memory-regression.md) (remembered folder lost on close — regression of
+FD-012) resolved: the save was moved to fire only after a successful folder load, and prevention
+tests (`CrossActivityContractTests`, synchronicity guards in `FolderMemoryContractTests`) now pin
+the isolation and ordering properties that prevent the class of regression.

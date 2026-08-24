@@ -42,6 +42,7 @@
     <string name="empty_folder_text">No images found in that folder. Pick a folder that contains image files.</string>
     <string name="picker_error_text">No app on this device can pick a folder.</string>
     <string name="folder_error_text">Couldn\'t open that folder. Try picking it again.</string>
+    <string name="folder_unavailable_text">Couldn\'t reopen your last folder. It may have been moved, or its permission cleared. Pick it again — the picker opens where you left off.</string>
     <string name="thumbnail_desc">Reference image</string>
 
     <!-- Settings -->
@@ -67,6 +68,7 @@
     <string name="session_stats_format">{0} drawn · {1} skipped</string>
     <string name="session_progress_heading">Session progress</string>
     <string name="session_error_text">Couldn\'t display these images. Go back and pick another folder.</string>
+    <string name="session_loading_text">Getting the first pose ready…</string>
 
     <string name="tool_grayscale_text">Grayscale</string>
     <string name="tool_flip_text">Flip</string>

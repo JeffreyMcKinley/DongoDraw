@@ -152,7 +152,7 @@ public class DrawingSessionSetupTests
         draft.Pause();
         draft.Resume();
 
-        Assert.False(draft.Tick());
+        Assert.Equal(SessionTick.None, draft.Tick());
         Assert.Equal(SessionPhase.Draft, draft.Phase);
         Assert.Equal(0, draft.CompletedCount);
         Assert.Equal(0, draft.SkippedCount);

@@ -226,7 +226,7 @@ public class SessionPlayerUiTests(AppiumAppFixture app, ITestOutputHelper output
     static void StartSession(AppiumGuard g, int imageCount, int? seconds = null)
     {
         UiTestEnvironment.SeedDefaultFolder(imageCount);
-        g.SelectDefaultFolder();
+        g.SelectDefaultFolder(expectImages: imageCount);
         g.OpenTab("tab_session");
 
         g.FindById("chip_break_0").Click();

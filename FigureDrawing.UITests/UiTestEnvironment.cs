@@ -77,18 +77,24 @@ internal static class UiTestEnvironment
 
         if (imageCount > 0)
         {
-            var staging = Path.Combine(Path.GetTempPath(), "fd-seed");
-            if (Directory.Exists(staging))
-                Directory.Delete(staging, recursive: true);
-
+            // Unique per call: two device runs sharing this host (Pixel and Fold) would otherwise
+            // delete each other's staging directory mid-push.
+            var staging = Path.Combine(Path.GetTempPath(), $"fd-seed-{Guid.NewGuid():N}");
             Directory.CreateDirectory(staging);
 
             var png = Convert.FromBase64String(OnePixelPngBase64);
             for (var i = 0; i < imageCount; i++)
                 File.WriteAllBytes(Path.Combine(staging, SeededImageName(i)), png);
 
-            // Trailing "/." pushes the CONTENTS of the staging dir, not the dir itself.
-            RunAdb("push", Path.Combine(staging, "."), DefaultPickerDir);
+            try
+            {
+                // Trailing "/." pushes the CONTENTS of the staging dir, not the dir itself.
+                RunAdb("push", Path.Combine(staging, "."), DefaultPickerDir);
+            }
+            finally
+            {
+                Directory.Delete(staging, recursive: true);
+            }
         }
 
         RunAdb("shell", "am", "broadcast", "-a", "android.intent.action.MEDIA_SCANNER_SCAN_FILE",
@@ -153,12 +159,33 @@ internal static class UiTestEnvironment
     // harmlessly.
     public static void ResetPickerState()
     {
+        var cleared = false;
+
         foreach (var package in new[] { "com.google.android.documentsui", "com.android.documentsui" })
         {
-            try { RunAdb("shell", "pm", "clear", package); }
-            catch (InvalidOperationException) { /* not installed on this image */ }
+            try
+            {
+                RunAdb("shell", "pm", "clear", package);
+                cleared = true;
+            }
+            catch (InvalidOperationException)
+            {
+                // Not the picker on this image; the other name is.
+            }
         }
+
+        // Swallowing both failures would leave DocumentsUI reopening where it was last left, which is
+        // exactly what the test calling this is trying to rule out — it would then pass without the
+        // app ever supplying a starting point.
+        if (!cleared)
+            throw new InvalidOperationException("Could not clear the system picker's state; no DocumentsUI package responded.");
     }
+
+    // Kills the app's process the way the system does when it reclaims a backgrounded app: no
+    // OnPause, no OnDestroy, no chance to close the database. `am force-stop` (what TerminateApp
+    // uses) is the harsher cousin that also cancels alarms and stops the package; this one is the
+    // shape the reported bug arrives in.
+    public static void KillAppProcess() => RunAdb("shell", "am", "kill", AppPackage);
 
     static string FindRepoRoot()
     {

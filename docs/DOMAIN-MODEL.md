@@ -47,13 +47,13 @@ concept that never varies independently of its neighbour does not earn its own t
 | 1 | `Pose` | Value object | Reference Library → Session Execution | `INV-IMG-*`, `INV-POSE-*` | Implicit (`string` id + session state) |
 | 2 | `ReferenceLibrary` | Aggregate root | Reference Library | `INV-GRP-*`, `INV-POOL-*` | Implemented |
 | 3 | `IDocumentTree` / `DocumentEntry` | Port / value object | Reference Library | `INV-TREE-*` | Implemented |
-| 3a | `LibraryReference` / `PersistedGrant` | Domain service / value object | Reference Library ↔ Preferences | `INV-GRP-5`, `INV-SET-P5`, `INV-X-11` | Implemented |
-| 4 | `SessionSetup` | Domain service | Session Setup | `INV-SET-1..5` | Implemented |
-| 5 | `SessionConfig` | Value object | Session Setup → Execution | `INV-CFG-*` | Implemented |
-| 6 | `DrawingSession<TImage>` | Aggregate root | Session Execution | `INV-SES-*`, `INV-CD-*`, `INV-PLY-*`, `INV-SUM-*`, `INV-POSE-*` | Implemented |
-| 7 | `ViewerTools` | Entity (no identity) | Session Execution | `INV-VIEW-*` | Implemented |
-| 8 | `Settings` | Aggregate root | Preferences | `INV-SET-P*`, `INV-STO-*` | Implemented |
-| 9 | `SessionRecord` | Entity | History | — | Proposed |
+| 4 | `LibraryReference` / `PersistedGrant` | Domain service / value object | Reference Library | `INV-REF-*` | Implemented |
+| 5 | `SessionSetup` | Domain service | Session Setup | `INV-SET-1..5` | Implemented |
+| 6 | `SessionConfig` | Value object | Session Setup → Execution | `INV-CFG-*` | Implemented |
+| 7 | `DrawingSession<TImage>` | Aggregate root | Session Execution | `INV-SES-*`, `INV-CD-*`, `INV-PLY-*`, `INV-SUM-*`, `INV-POSE-*` | Implemented |
+| 8 | `ViewerTools` | Entity (no identity) | Session Execution | `INV-VIEW-*` | Implemented |
+| 9 | `Settings` | Aggregate root | Preferences | `INV-SET-P*`, `INV-STO-*` | Implemented |
+| 10 | `SessionRecord` | Entity | History | — | Proposed |
 
 What was merged, and why, is [§9](#9-consolidation). Read a card first; the mapping is only needed
 when touching the code.
@@ -123,9 +123,11 @@ each document id into the durable content URI a session draws from — the Andro
 `DocumentsContract.BuildDocumentUriUsingTree`, tests pass nothing and keep using `"a"`, `"b"`,
 `"c"`. That is what makes `Pool` *the* session pool rather than a list the screen has to re-map.
 
-**No `IsAvailable`.** Whether a persisted read permission is still held is Android knowledge. A
-revoked grant needs no query of its own: the tree reports nothing, the library enumerates to empty,
-and the empty state shows (`INV-GRP-4`, `INV-GRP-5`).
+**No `IsAvailable` on the aggregate.** The library is its contents, so "may I still read this
+folder" is a question about the *reference*, not about the pool. It is answered by
+`LibraryReference.HasReadGrant` (§2.4), which the screen feeds the platform's grant list — and that
+is why a revoked grant is no longer indistinguishable from an empty folder: it has its own message
+(`INV-GRP-4`, `INV-GRP-5`, `INV-REF-3`).
 
 **Rules — the group**
 
@@ -139,9 +141,12 @@ and the empty state shows (`INV-GRP-4`, `INV-GRP-5`).
   descendant must not loop; visited document ids are tracked.
 - `INV-GRP-4` — **It may be empty, and empty is not an error.** Zero images shows the empty state,
   blocks Start, and does not crash.
-- `INV-GRP-5` — **Access can expire.** The library is only usable while its persisted read
-  permission is still held. A revoked grant is an expected outcome: fall back to the empty state,
-  log, and let the user pick again. Never crash and never prompt in a loop.
+- `INV-GRP-5` — **Access can expire, the choice does not.** The library is only usable while its
+  persisted read permission is still held, and a revoked grant is an expected outcome: fall back,
+  log, and let the user pick again. Never crash and never prompt in a loop. The reference itself
+  is *not* forgotten when access is — a remembered folder that cannot be reopened says so and
+  still aims the picker (`folder_unavailable_text`), because showing the first-run state instead
+  reads as the app having lost the choice.
 - `INV-GRP-6` — **Order is enumeration order.** The library's own order is deterministic and
   provider-driven. Randomizing the *order* belongs to the session, never here — the one random
   choice the library makes is *which* ids cross a bounded handoff (`INV-POOL-6`), and even that
@@ -167,6 +172,14 @@ and the empty state shows (`INV-GRP-4`, `INV-GRP-5`).
   from the sample as if it were the pool, so `INV-POOL-1`..`INV-POOL-4` hold unchanged on what it
   received.
 
+  How wide that bound is comes from the session's own length, not from the transport alone
+  (`SessionSetup.HandoffBound` — a setup rule, so the library is not made to know how long a session
+  is): the player is handed an array and cannot ask the library for more, so the sample is also what
+  "run it again" redraws from. It is a multiple of the pose count, floored so a short session still
+  draws from a spread and ceilinged by what the transport carries, the ceiling winning if the two
+  ever disagree. The trade against a flat bound is real and deliberate: a mid-sized library now
+  crosses in part rather than whole, so a repeated run redraws from the sample, not the folder.
+
 **Traversal is stateless.** Classification (`IsImage`, `IsDirectory`) and the depth-first policy
 hold no state between calls, so two callers can never interfere — that property must survive the
 merge into the aggregate.
@@ -189,7 +202,10 @@ the aggregate it protects is not an ACL.
 **Rules**
 
 - `INV-TREE-1` — **The port is the only door.** `DocumentsContract`, `ContentResolver`, `Cursor`,
-  and `Uri` stop at the adapter. Nothing SAF-shaped crosses into the domain.
+  and `Uri` stop at the adapter. Nothing SAF-shaped crosses into the domain, with one stated
+  carve-out: the *form* of the reference the app itself persisted is domain knowledge, and
+  `LibraryReference` (§2.4) recognises a `content://` tree URI without ever constructing, resolving
+  or querying one.
 - `INV-TREE-2` — **`GetChildren` returns direct children only.** Recursion is the library's job,
   not the adapter's, so the adapter carries no domain logic — only the query and, since FD-009, the
   abandonment check that stops it answering once its load is superseded (`INV-X-13`, pinned by
@@ -200,6 +216,48 @@ the aggregate it protects is not an ACL.
 
 ---
 
+### 2.4 `LibraryReference` / `PersistedGrant` — *Implemented*
+
+The *remembered* library: the string `Settings.LastCollection` carries between launches, and the
+rules for deciding what it is still worth doing with. `PersistedGrant` is one entry of the
+platform's permission list — a reference, and whether it is a read grant — reduced to what those
+rules need.
+
+Not folded into `ReferenceLibrary`, because the aggregate is a folder the app can read *now* and
+every question here is asked when there is no library yet: on launch before anything is loaded, and
+on a picker tap that may be about to replace it. Not folded into `Settings`, because the store's job
+is to hold the string, not to know what makes one usable (§5.1).
+
+| Aspect | Value |
+|---|---|
+| Kind | Domain service (stateless) + value object |
+| Context | Reference Library |
+| Identity | None — the reference names the folder, and is its identity |
+| Lifetime | None; every operation is a pure function of its arguments |
+| Operations | `TryParse`, `HasReadGrant`, `GrantsToRelease`, `Classify` |
+
+**Rules**
+
+- `INV-REF-1` — **A reference has a form.** Non-blank, within `MaxLength`, a `content://` scheme, and
+  a `/tree/` segment carrying a non-empty document id under a real authority. Anything else is "no
+  folder remembered", never an error.
+- `INV-REF-2` — **One spelling.** Comparison is over a canonical form: lower-case scheme, upper-case
+  percent-escapes, everything else byte-exact. The stored value and the platform's grant list are
+  two round-trips through the same folder and do not always come back spelled identically; the
+  document id itself stays opaque (`INV-IMG-1`).
+- `INV-REF-3` — **A grant is read, held, and ours.** Only a read grant for the same reference counts.
+  A write-only entry is someone else's, and a missing one means remembered-but-unreachable rather
+  than never-picked (`INV-GRP-5`).
+- `INV-REF-4` — **Superseded grants are handed back.** Picking a different folder releases the read
+  grants held for folders that are no longer remembered; re-picking the same one releases nothing.
+  A package's persisted grants are capped and the platform drops the *oldest*, so a grant kept for a
+  folder the artist has moved on from can cost them the one they still use.
+- `INV-REF-5` — **Four states, four things to say.** `NeverPicked`, `Unavailable`, `Empty`, `Ready`.
+  The screen maps them to messages; it does not decide them. Collapsing `Unavailable` into
+  `NeverPicked` is what makes a revoked permission read as "the app forgot my folder".
+
+---
+
 ## 3. Session Setup objects
 
 ### 3.1 `SessionSetup` — *Implemented*
@@ -207,6 +265,12 @@ the aggregate it protects is not an ACL.
 Stateless domain service: parses the setup inputs, answers whether Start is allowed, and produces
 the config. The evaluated result it returns is a draft session (`DrawingSession` in its `Draft`
 phase, §4.1) rather than a separate state object.
+
+It also owns the two things derived purely from a configured session's shape: `EstimateSeconds` (how
+long the run takes) and `HandoffBound(imageCount, maxIds)` (how many reference ids that run needs in
+play, `INV-POOL-6`). The second lives here rather than on `ReferenceLibrary` because the library
+supplies the pool and must not have to know how long a session is — the dependency runs one way
+(ARCHITECTURE.md §16).
 
 **Rules**
 
@@ -266,8 +330,8 @@ fields the session already holds, are not independent concepts. They were six ty
 | **Lifetime** | A draft is evaluated on the setup screen; constructing one with a pool copies it and positions the session on its first displayable image; it ends at completion or `End()`. Never restarted — construct a new one |
 | **Phases** | `Draft` → `Pose` ⇄ `Break` → `Complete` |
 | **State** | Parsed setup inputs; the upcoming queue for the current pass; current image id and its loaded image; completed and skipped counts; accumulated drawing time; time left on the current phase; run/pause state |
-| **Commands** | `Next()`, `Skip()`, `End()`, `Tick()`, `Pause(PauseReason = Lifecycle)`, `Resume()` |
-| **Queries** | Every phase: `Phase`, `SecondsPerImage`, `ImageCount`, `BreakSeconds`, `FolderSelected`, `Config`. Draft: `SecondsValid`, `CountValid`, `CanStart`, `EstimateSeconds`. Running: `CurrentImage`, `CurrentImageId`, `Display`, `TimeRemaining`, `SecondsRemaining`, `IsExpired`, `PhaseDuration`, `RemainingPercent`, `OnBreak`, `IsPaused`, `PausedByUser`, `IsRunning`, `CompletedCount`, `SkippedCount`, `TargetCount`, `Remaining`, `CurrentPoseNumber`, `IsComplete`, `CouldNotDisplayImage`, `ImagesDisplayed`, `TotalDrawingTime`, `AveragePoseTime` |
+| **Commands** | `Next()`, `Skip()`, `End()`, `Tick() -> SessionTick`, `Pause(PauseReason = Lifecycle)`, `Resume()` |
+| **Queries** | Every phase: `Phase`, `SecondsPerImage`, `ImageCount`, `BreakSeconds`, `FolderSelected`, `Config`. Draft: `SecondsValid`, `CountValid`, `CanStart`, `EstimateSeconds`. Running: `CurrentImage`, `CurrentImageId`, `UpcomingImageId` (the peek, `INV-PLY-7`), `Display`, `TimeRemaining`, `SecondsRemaining`, `IsExpired`, `PhaseDuration`, `RemainingPercent`, `OnBreak`, `IsPaused`, `PausedByUser`, `IsRunning`, `CompletedCount`, `SkippedCount`, `TargetCount`, `Remaining`, `CurrentPoseNumber`, `IsComplete`, `CouldNotDisplayImage`, `ImagesDisplayed`, `TotalDrawingTime`, `AveragePoseTime` |
 | **Statics** | `Evaluate(...)` (the draft factory) and, on the non-generic partner type, `DrawingSession.Format(seconds)` |
 
 `Remaining` counts *images* left, `TimeRemaining` counts the current phase's *time* — two different
@@ -308,6 +372,10 @@ Reading a run query off a draft is legal and meaningless — the phase says whic
   rejecting an image, not asking for a rest.
 - `INV-SES-12` — **Drawing time excludes break, background, and paused time.** The session clock
   stops for the whole break and for the whole pause.
+- `INV-SES-13` — **A tick reports the transition it made.** `Tick()` returns exactly one of:
+  nothing happened, a pose started, a rest started, the session completed. A caller never has to
+  infer the transition from the state afterwards — which is what kept "what counts as a new pose"
+  in an Activity, out of reach of every test.
 
 **Rules — the pose clock**
 
@@ -339,15 +407,27 @@ Reading a run query off a draft is legal and meaningless — the phase says whic
 - `INV-PLY-2` — **An unreadable image is skipped, not counted.** It travels the skip path, so it
   neither advances the completed count nor banks time — a broken file cannot consume a slot the
   user paid for.
-- `INV-PLY-3` — **Failure is bounded.** After a fixed number of consecutive failures (default 100)
-  the session ends and reports "could not display" rather than looping. Necessary because a pool
-  smaller than the target count repeats forever by design.
+- `INV-PLY-3` — **Failure is bounded.** After a number of consecutive failures the session ends and
+  reports "could not display" rather than looping. Necessary because a pool smaller than the target
+  count repeats forever by design. The bound is the caller's to state — the player passes twice the
+  pool, which cannot be reached while a drawable image remains even when a run of failures spans a
+  pass boundary — and defaults to 100 only for a caller that says nothing. With `INV-PLY-8` the
+  *loads* such a run costs are bounded by the pool rather than by the budget.
 - `INV-PLY-4` — **"Could not display" is distinguishable from normal completion**, so the screen
   can show an error instead of a summary.
 - `INV-PLY-5` — **The loader never throws through the session.** Decode failures are caught at the
   adapter and returned as null.
 - `INV-PLY-6` — **Resolution is synchronous and re-entrant-safe.** It runs to a decision — a
   displayable image, completion, or the failure budget — before returning.
+- `INV-PLY-7` — **The session may be asked what comes next.** `UpcomingImageId` reports the next id
+  in the current pass without consuming it: it never advances the sequence, starts a clock, or
+  counts anything. Refilling a drained pass is the one mutation it is allowed — a pass is
+  materialised whole, so the resulting sequence is identical either way. Stated as an exception
+  because `INV-SES-1` and `INV-X-12` otherwise forbid a query that mutates.
+- `INV-PLY-8` — **An unreadable image is not loaded twice in one session.** Once the loader has
+  reported an id unreadable, later passes skip it without a second load attempt. It still travels
+  the skip path and still counts against the budget (`INV-PLY-2`, `INV-PLY-3`) — only the load is
+  elided. Per session, never persisted: a file fixed between sessions must load again.
 
 **Rules — the totals**
 
@@ -429,13 +509,16 @@ dropping the write — losing preferences quietly is worse than failing loudly.
 - `INV-SET-P3` — **Settings seed, they do not control.** Values are copied into the setup screen on
   launch and into intent extras on Start. Neither a session nor the setup logic reads settings at
   runtime.
-- `INV-SET-P4` — **Written at named moments only** — a folder was picked, Start was pressed, a
-  settings toggle was flipped, a break preset was tapped. Never on a keystroke, and never from a
-  background thread.
+- `INV-SET-P4` — **Written at named moments only** — a folder was picked and loaded successfully,
+  Start was pressed, a settings toggle was flipped, a break preset was tapped, the screen was left
+  (`OnPause`). Never on a keystroke, and never from a background thread. Leaving the screen is the
+  backstop for how apps actually end: swiped off the recents list or reclaimed while backgrounded,
+  neither of which runs `OnDestroy`.
 - `INV-SET-P5` — **`LastCollection` holds a library reference, not its contents** (`INV-GRP-1`),
   and a stale one is expected (`INV-GRP-5`). The reference is what a launch restores *and* where
-  the picker reopens; whether it is still worth acting on — something stored, a SAF tree form, a
-  read grant still held — is `LibraryReference`, not the screen's judgement.
+  the picker reopens — pointing the picker needs no grant, restoring the library does. What makes a
+  stored value usable at all is `LibraryReference` (`INV-REF-1`..`INV-REF-3`), not the screen's
+  judgement.
 - `INV-SET-P6` — **Losing it is survivable.** A deleted or corrupt database costs preferences and
   nothing else; the app must start with defaults.
 
@@ -444,6 +527,11 @@ dropping the write — losing preferences quietly is worse than failing loudly.
 - `INV-STO-1` — **Sole owner of the database.** No other type opens a `LiteDatabase`.
 - `INV-STO-2` — **It owns the document identity.** Callers never set `Id`; it is stamped on write.
 - `INV-STO-3` — **Disposed with the screen that opened it.**
+- `INV-STO-5` — **A save that returned is a save that survives.** `Save()` checkpoints before it
+  returns, so the value is in the datafile and not only in the write-ahead log. A process killed
+  mid-write can leave that log truncated, and a truncated log does not fail to open — it reads back
+  as the values from *before* the save, which is a preference silently reverting with nothing thrown
+  and nothing logged.
 - `INV-STO-4` — **Storage vocabulary stops here.** Nothing above it speaks BSON, collections, or
   LiteDB types. Merging the document and the store does *not* license spreading BSON attributes
   further: if `Settings` ever grows domain behaviour, split it into a domain type and a persisted
@@ -544,15 +632,17 @@ invariant families has one test file per family rather than one per type.
 | `INV-IMG-*`, `INV-GRP-*`, `INV-POOL-*`, `INV-TREE-*` | `ReferenceLibrary` + the SAF adapter | `ReferenceLibraryTests` with an in-memory tree. `INV-GRP-1`'s re-derivation is *triggered* by `MainActivity.OnStart`, covered on a device by `FolderPickerUiTests.ReturningFromASession_RebuildsTheGridAndPicksUpNewImages` |
 | `INV-SET-1..5`, `INV-CFG-*` | `SessionSetup`, `DrawingSession<TImage>.Evaluate` | `SessionSetupTests`, `DrawingSessionSetupTests` |
 | `INV-SES-1..9`, `INV-SUM-*` | `DrawingSession<TImage>` | `DrawingSessionTests` |
-| `INV-SES-10..12`, `INV-POSE-*` | `DrawingSession<TImage>` | `DrawingSessionBreakTests`, `DrawingSessionTimeAccountingTests` |
+| `INV-SES-10..13`, `INV-POSE-*` | `DrawingSession<TImage>` | `DrawingSessionBreakTests`, `DrawingSessionTimeAccountingTests` |
 | `INV-CD-*` | `DrawingSession<TImage>` | `DrawingSessionCountdownTests` |
 | `INV-PLY-*` | `DrawingSession<TImage>` | `DrawingSessionImageTests` with a fake loader |
 | `INV-VIEW-*` | `ViewerTools` | `ViewerToolsTests` |
 | `INV-SET-P*`, `INV-STO-*` | `Settings` | `SettingsTests` |
-| `INV-SET-P5`, `INV-GRP-5` (the remembered folder) | `LibraryReference` + `MainActivity`'s wiring | `LibraryReferenceTests`, `FolderMemoryContractTests`, `FolderPickerUiTests` |
+| `INV-STO-5` | `Settings.Save` (checkpoint) | `SettingsTests` kill + truncation cases, `FolderPickerUiTests.PickedFolder_SurvivesTheProcessBeingKilled` |
+| `INV-REF-*` | `LibraryReference`, wired by `MainActivity` | `LibraryReferenceTests`, `FolderMemoryContractTests`, `FolderPickerUiTests` |
 | Cross-context flows | The objects together | `SessionE2ETests` |
 | `INV-X-13` (an abandonable load) | `LoadGeneration` and `LibraryLoadState` (the "never a mixture" clause), called by `LibraryLoader` and `MainActivity` | `LoadGenerationTests` and `LibraryLoadStateTests` for the rules themselves; `LibraryLoadContractTests` for where they are called — not observable through Appium, see FD-009 |
-| `INV-X-*` (the rest) | Structural | Project references, `AndroidBuildTests`, `SessionScreenContractTests`, `FolderMemoryContractTests`, code review |
+| `INV-X-*` (the rest) | Structural | Project references, `AndroidBuildTests`, `SessionScreenContractTests`, `FolderMemoryContractTests`, `CrossActivityContractTests`, code review |
+| `INV-SET-P4`, `INV-STO-1` | Structural (Activity isolation) | `CrossActivityContractTests` (SessionActivity never touches Settings; the folder persistence chain contains no await) |
 
 Adding an invariant means adding a named test. Removing one means saying so in a ticket — an
 invariant deleted quietly is how a domain model stops describing the code.
@@ -610,6 +700,24 @@ Changed again by the repo-wide review of 2026-08-16:
 | `INV-GRP-6` | **Narrowed** | It said randomization never belongs to the library. `INV-POOL-6` is one random choice made there — of membership, never of order |
 | `INV-IMG-4` | **Corrected** | It claimed decoded images were bounded to `MaxImageDimension`. The sampler bounded the *short* side, so an aspect-extreme source was effectively unbounded; the long side is now held to within 2x the ceiling |
 
+Changed by FD-011 and FD-010:
+
+| Rule | Change | Why |
+|---|---|---|
+| `INV-SES-13` | **Added** | `Tick()` returned a bool, so the screen reconstructed the transition from the state left behind (`if (!session.OnBreak) Chime();`) — a rule about what counts as a new pose, living where no unit test could reach it. `INV-SES-10` and `INV-CD-6` are what the `SessionTick` enum makes observable; neither changed in meaning |
+| `INV-PLY-7` | **Added** | The screen could not decode ahead without asking what came next, so a multi-megabyte decode ran inside the 200 ms repaint callback at every pose boundary |
+| `INV-PLY-8` | **Added** | A pool smaller than the configured count repeats by design, so an unreadable file was re-opened and re-decoded on every pass — up to the whole failure budget inside one tick |
+| `INV-PLY-3` | **Unchanged in meaning** | The budget is now an explicit value at the player's call site rather than the constructor's implicit default of 100, and is derived from the pool so it scales with the run |
+| `INV-POOL-6` | **Narrowed** | The bound was a flat 1000 sized only by the Binder buffer. It is now derived from the session's length as well, because the player is handed an array and cannot re-sample. The rule moved to `SessionSetup`, where a config-derived number belongs; the library still owns the sampling |
+| `INV-SES-1` | **Exception stated** | "Commands only" now carries one named carve-out: `UpcomingImageId` may refill a drained pass in order to answer (`INV-PLY-7`). It changes nothing else, and a pass is materialised whole, so the sequence is identical either way |
+| `INV-X-12` | **Exception stated** | Same carve-out from the other side: a query that mutates was forbidden outright, and is now forbidden except where the mutation is stated as part of the query's own rule |
+
+Changed by FD-013:
+
+| Rule | Change | Why |
+|---|---|---|
+| `INV-SET-P4` | **Tightened** | Save deferred past a successful load; a folder that fails to load is no longer persisted (FD-013) |
+
 One behaviour did change, deliberately: when the consecutive-failure budget is exhausted the session
 now banks **no** partial time for the unreadable image it died on. The old `SessionPlayer` routed
 that path through `End()`, which banked it — time spent failing to decode, counted as drawing time,
@@ -625,7 +733,7 @@ against `INV-PLY-2`.
 Three consequences worth knowing before the next change:
 
 - **The draft is a session, so `Evaluate` is generic.** `MainActivity` calls
-  `DrawingSession<Bitmap>.Evaluate(...)` for a screen that never touches an image. That reads oddly
+  `DrawingSession<PoseImage>.Evaluate(...)` for a screen that never touches an image. That reads oddly
   and is the accepted price of deleting `SessionSetupState`; the alternative is that record under a
   new name.
 - **`INV-POOL-2` is now enforced, not just asserted.** The library de-duplicates ids as it walks, so

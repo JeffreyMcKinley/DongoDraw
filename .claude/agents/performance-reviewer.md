@@ -89,9 +89,10 @@ not an optimization:
   on every `OnStart` — see ARCHITECTURE.md §8)
 - Group membership is re-derived rather than cached, by design (`INV-GRP-1`). Propose memoizing it
   only within a single load, never as persisted state
-- LiteDB access is one document read per screen and a write at two named moments — folder picked,
-  Start pressed (`INV-SET-P4`). Flag a write on every keystroke or inside a loop; index and N+1
-  analysis applies only if a change adds a real collection
+- LiteDB access is one document read per screen and a write at named moments (`INV-SET-P4`) — folder
+  picked and loaded successfully, Start pressed, settings toggle flipped, break preset tapped, screen
+  left. Flag a write on every keystroke or inside a loop; index and N+1 analysis applies only if a
+  change adds a real collection
 - Review any network calls for batching and round trips — there are none today, so a new one is a
   finding on its own before it is a performance question
 - Identify caching, memoization, or deduplication opportunities, respecting the layer rules above
