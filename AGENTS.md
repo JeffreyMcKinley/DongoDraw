@@ -47,3 +47,30 @@ testing strategy, and the anti-patterns that count as violations.
 
 Short version: all logic that can be written without Android goes in `FigureDrawing.Core` and is
 unit tested there; Activities only wire Core to views.
+
+
+# Implementation Workflow
+
+Every feature or bug fix follows this sequence. No step is optional.
+
+## 1. TDD — Red, Green, Refactor
+
+Use the `tdd` skill (`/tdd`) to drive implementation:
+
+1. **Red.** Write failing tests first. Run them (`./nx.bat run FigureDrawing.Tests:test`) and
+   confirm they fail. A test that has never been red has not been shown to test anything.
+2. **Green.** Write the minimal code to make the tests pass. Run the tests again and confirm green.
+3. **Refactor.** Clean up while green. Tests must stay green after every change.
+
+## 2. Review — Fix — Repeat
+
+After tests are green, run the `review-crew` skill (`/review-crew`) for a full multi-agent review.
+
+1. **Review.** Run `/review-crew`. Read every finding.
+2. **Fix.** Address all findings that are not marked "Out of scope". Re-run tests after each fix to
+   stay green.
+3. **Re-review.** Run `/review-crew` again on the updated code.
+4. **Repeat** steps 2–3 until the review returns zero non-out-of-scope findings.
+
+Only then is the change complete. A review that still has actionable findings means the work is not
+done — do not commit, do not move on.
