@@ -1,5 +1,7 @@
 # FD-014 — Countdown warning beep
 
+Status: ready-for-agent
+
 **Story:** _As an artist, I hear a short beep when ten seconds remain on a pose, so I can wrap up my marks without watching the clock._
 **Depends on:** none
 

@@ -1,5 +1,7 @@
 # FD-015 — Skip break button
 
+Status: ready-for-agent
+
 **Story:** _As an artist, I can tap "Ready" during a break to start the next pose immediately, so I am not forced to wait when I am already prepared._
 **Depends on:** none
 
