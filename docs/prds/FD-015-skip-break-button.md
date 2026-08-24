@@ -2,12 +2,12 @@
 
 Status: ready-for-agent
 
-**Story:** _As an artist, I can tap "Ready" during a break to start the next pose immediately, so I am not forced to wait when I am already prepared._
+**Story:** _As an artist, I can tap "Next image" during a break to start the next pose immediately, so I am not forced to wait when I am already prepared._
 **Depends on:** none
 
 ## Summary
 
-When a break is active between poses, a "Ready" button appears below the break timer. Tapping it
+When a break is active between poses, a "Next image" button appears below the break timer. Tapping it
 ends the break immediately and starts the next pose. The Core already supports this — `Next()`
 during a break advances to the next pose — so this ticket is Android wiring and UI only.
 
@@ -30,7 +30,7 @@ during a break advances to the next pose — so this ticket is Android wiring an
 - **Android:** `SessionActivity` — add a `Button` (or `MaterialButton`) to the break overlay
   layout. Visible only when `session.OnBreak` is true; hidden on pose start. `OnClick` calls
   `session.Next()` then runs the same post-tick UI update path as the timer expiry. The button
-  text is the string resource `break_skip_label` ("Ready").
+  text is the string resource `break_skip_label` ("Next image").
 - **Resources:** `break_skip_label` string. Style reuses the existing Nocturne button tokens
   (`.btn-secondary` or equivalent from `styles.xml`). Placed below the break timer `TextView` in
   the break overlay `FrameLayout`.
@@ -40,7 +40,7 @@ during a break advances to the next pose — so this ticket is Android wiring an
 
 ## Acceptance criteria
 
-- [ ] During a break, a "Ready" button is visible below the break countdown
+- [ ] During a break, a "Next image" button is visible below the break countdown
 - [ ] Tapping the button ends the break and the next pose begins immediately with a full clock
       (`INV-CD-6`, `INV-POSE-2`)
 - [ ] The button disappears when the pose starts (whether by tap or by timer expiry)
@@ -60,6 +60,30 @@ during a break advances to the next pose — so this ticket is Android wiring an
 | Contract | `UiResourceContractTests` — `break_skip_label` string exists |
 | E2E-model | `n/a` |
 | UI (Appium) | `BreakSkipUiTests` — button visible during break, tapping it starts next pose, button hidden during pose. Optional: only if break-driven UI tests are feasible on emulator timing |
+
+## UI and design
+
+Design source: Claude Design project `ae2fad04-3c3e-4595-8622-dc6366331e21`, file
+`Figure Drawing App.dc.html`, break overlay section.
+
+**Break overlay** — button added to the existing centered column layout:
+
+- **Position:** below the "Next pose coming up" subtitle, with `margin-top: 12px`
+- **Style:** `btn btn-secondary`, `min-width: 140px` — matches the secondary button pattern used
+  elsewhere (e.g. "Skip this image" on the pause sheet)
+- **Label:** "Next image" (string resource `break_skip_label`)
+- **Visibility:** only when `onBreak` is true (break phase and not paused). Hidden during pose,
+  pause overlay, and completion.
+
+**Layout stack** (top to bottom, centered):
+1. "Break" label — uppercase accent kicker (`var(--color-accent-400)`)
+2. Break countdown clock — 44px heading font
+3. "Next pose coming up" — 13px neutral-500 subtitle
+4. **"Next image" button** — `btn-secondary`, 12px gap above
+
+No changes to the pause overlay, rail, or settings screen. No new view ids beyond the button
+itself. Foldable: the break overlay is `position:absolute;inset:0` over the stage, so it fills
+whatever size the stage is — no layout change needed for fold.
 
 ## Out of scope
 

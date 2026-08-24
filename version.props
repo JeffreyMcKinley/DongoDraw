@@ -29,9 +29,9 @@
 
   <PropertyGroup>
     <FdVersionMajor>0</FdVersionMajor>
-    <FdVersionMinor>2</FdVersionMinor>
+    <FdVersionMinor>3</FdVersionMinor>
     <FdVersionPatch>0</FdVersionPatch>
-    <FdBuildNumber>1</FdBuildNumber>
+    <FdBuildNumber>0</FdBuildNumber>
   </PropertyGroup>
 
 </Project>

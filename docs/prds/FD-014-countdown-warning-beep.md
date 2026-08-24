@@ -63,11 +63,40 @@ seconds). The artist can enable or disable it independently of the existing tran
 | E2E-model | `SessionE2ETests` — a full session with warnings enabled completes normally |
 | UI (Appium) | `n/a` — the beep is audible-only; Core coverage is sufficient |
 
+## UI and design
+
+Design source: Claude Design project `ae2fad04-3c3e-4595-8622-dc6366331e21`, file
+`Figure Drawing App.dc.html`, state `warn10`.
+
+**Settings screen** — new row in the settings list, same `tool-chip` toggle pattern as existing
+rows:
+
+- Label: **10-second warning**
+- Help text: "Beeps when 10 seconds are left on a pose"
+- Toggle: On / Off (default On in the design; `Settings.WarnSeconds` default TBD — see open
+  questions)
+
+**Player screen** — two visual reinforcements alongside the audio beep:
+
+- **Countdown text** turns `var(--color-accent-300)` (the accent highlight) when remaining ≤ 10 s
+  during a pose. Reverts on pose advance or when paused. Android: set `countdownText` color
+  conditionally in the tick handler.
+- **Progress ring** stroke changes from `#9184d9` to `#c7bff0` (lighter accent) at the same
+  threshold. Android: set the ring's `setColor()` in the tick handler.
+- Both visual cues are tied to the same `warn10` / `WarnSeconds` setting — disabled when the
+  warning is off.
+
+**Audio** — 880 Hz sine tone, ~220 ms, single beep. Higher pitch than the transition chime
+(`PropBeep` at lower frequency) so the artist can distinguish them by ear.
+
+No new layouts or view ids beyond the settings row. Nocturne tokens and existing `tool-chip` /
+`card` styles reused.
+
 ## Out of scope
 
 - Configurable threshold beyond on/off (artist picks how many seconds) — could follow as an
   enhancement; for now fixed at 10 s when enabled
-- Visual warning (screen flash, colour change) — separate ticket if wanted
+- Visual warning beyond the accent colour shift — no screen flash or animation
 - Warning during break countdown
 
 ## Risks
