@@ -13,7 +13,6 @@ renumber an id.
 
 | ID | Title | Context |
 |----|-------|---------|
-| [FD-009](FD-009-async-reference-library.md) | Reference library loads without freezing the screen | Reference Library |
 | [FD-014](FD-014-countdown-warning-beep.md) | Countdown warning beep at 10 seconds remaining | Session Execution / Preferences |
 | [FD-015](FD-015-skip-break-button.md) | Skip break button ("Ready") during inter-pose delay | Session Execution |
 
