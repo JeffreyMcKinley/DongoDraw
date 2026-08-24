@@ -308,6 +308,7 @@ public sealed class SettingsTests : IDisposable
             .EnumerateFiles(TestPaths.RepoRoot, "*.cs", SearchOption.AllDirectories)
             .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}") &&
                            !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}") &&
+                           !path.Contains($"{Path.DirectorySeparatorChar}.claude{Path.DirectorySeparatorChar}") &&
                            // This file names the type in the assertion below, not in a call.
                            !path.EndsWith("SettingsTests.cs"))
             .Where(path => File.ReadAllText(path).Contains("new LiteDatabase("))
@@ -332,5 +333,77 @@ public sealed class SettingsTests : IDisposable
 
         using var reopened = Settings.Open(databasePath);
         Assert.Equal(30, reopened.PoseDurationSeconds);
+    }
+
+    // FD-013 prevention: documents the concurrency contract. Settings is single-threaded by design
+    // (INV-SET-P4 names the write moments, and they are all on the main thread). This test does not
+    // make Settings thread-safe — it records what happens when two threads write at once. If LiteDB
+    // throws or corrupts, the test documents that fact for anyone touching the threading architecture
+    // (e.g. the async session build in SessionActivity). If it survives, the test still pins the
+    // behaviour so a future LiteDB upgrade that changes it is visible.
+    [Fact]
+    public void ConcurrentSaves_DoNotCorruptTheDatabase()
+    {
+        var settings = Settings.Open(databasePath);
+
+        // Run two threads that write different properties and save. Whether this throws, corrupts,
+        // or silently succeeds is the answer this test records. The assertion is that it does not
+        // corrupt the file — a reopen afterwards must read valid data.
+        var barrier = new ManualResetEventSlim(false);
+
+        var t1 = Task.Run(() =>
+        {
+            barrier.Wait();
+            for (var i = 0; i < 50; i++)
+            {
+                settings.PoseDurationSeconds = 10 + i;
+                settings.Save();
+            }
+        });
+
+        var t2 = Task.Run(() =>
+        {
+            barrier.Wait();
+            for (var i = 0; i < 50; i++)
+            {
+                settings.SessionImageCount = 5 + i;
+                settings.Save();
+            }
+        });
+
+        barrier.Set();
+
+        // If LiteDB throws under contention, the exception is caught below and the file integrity
+        // assertion still runs regardless.
+        try
+        {
+#pragma warning disable xUnit1031 // Synchronous blocking is intentional: the test exercises concurrent writes
+            Task.WaitAll(t1, t2);
+#pragma warning restore xUnit1031
+        }
+        catch (AggregateException)
+        {
+            // One or both threads faulted — expected under contention. The assertion below checks
+            // whether the file survived, which is the point of this test.
+        }
+        finally
+        {
+            settings.Dispose();
+        }
+
+        // At least one thread must have completed without faulting — if both faulted, the defaults
+        // would satisfy the range check and the test would prove nothing about corruption.
+        Assert.True(!t1.IsFaulted || !t2.IsFaulted,
+            "Both threads faulted — no concurrent writes to test.");
+
+        // The file must still be openable and self-consistent after concurrent writes.
+        using var reopened = Settings.Open(databasePath);
+        Assert.InRange(reopened.PoseDurationSeconds, 10, 59);
+        Assert.InRange(reopened.SessionImageCount, 5, 54);
+
+        // At least one value must differ from the default — otherwise we cannot distinguish "file
+        // survived" from "file was silently discarded and replaced with defaults" (INV-SET-P6).
+        Assert.True(reopened.PoseDurationSeconds != 30 || reopened.SessionImageCount != 20,
+            "Both values are defaults — cannot distinguish survival from silent discard.");
     }
 }

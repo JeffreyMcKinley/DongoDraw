@@ -142,8 +142,9 @@ under test.
 - **Persisted state** is the single `Settings` LiteDB document. It seeds the setup inputs on launch
   and records the last folder — which is both what a launch restores and where the picker reopens
   (`MainActivity.RememberedTree` / `LastPickedDocumentUri`). It is written where each value
-  changes and again in `OnPause` (which first captures the typed inputs, the only values living
-  nowhere else), since a swipe off the recents list never reaches `OnDestroy`. `Settings.Save`
+  changes (for folder picks, only after a successful load) and again in `OnPause` (which first
+  captures the typed inputs, the only values living nowhere else), since a swipe off the recents
+  list never reaches `OnDestroy`. `Settings.Save`
   checkpoints, so a value that has been saved is in the datafile rather than only in the
   write-ahead log — see §6. `Android.Provider` also declares a `Settings`, so `MainActivity`
   carries a `using Settings = FigureDrawing.Data.Settings;` alias.
@@ -275,7 +276,7 @@ type owns several invariant families: the session aggregate has one file per fam
 is what keeps a 350-test suite navigable after the consolidation.
 
 **Contract tests** (`UiResourceContractTests`, `SessionScreenContractTests`, `TypefaceContractTests`,
-`SourceContractTests`,
+`SourceContractTests`, `CrossActivityContractTests`,
 `FolderMemoryContractTests`, `AndroidBuildTests`) —
 a pattern worth understanding before touching the Android layer. They parse the *source and XML as
 files* rather than running them, so they need no device but still catch the runtime-only failures
@@ -283,8 +284,9 @@ that Xamarin's compile-time checks miss: a view id referenced from code but abse
 a missing string, a build property regression. `TestPaths` locates the repo root by walking up to
 `FigureDrawing.sln`, since the working directory differs between `nx` and `dotnet test`.
 
-A contract test reads *code*, not prose: `SourceContract` (shared by `FolderMemoryContractTests` and
-`SessionScreenContractTests`, and tested itself in `SourceContractTests`) strips comments and string
+A contract test reads *code*, not prose: `SourceContract` (shared by `FolderMemoryContractTests`,
+`SessionScreenContractTests`, and `CrossActivityContractTests`, and tested itself in
+`SourceContractTests`) strips comments and string
 literals before anything is asserted, because an assertion a comment can satisfy stays green
 through the deletion it exists to catch — and one a comment can *break* fails a build that behaves.
 It also normalises line endings, since its declaration matcher anchors on end-of-line and a CRLF

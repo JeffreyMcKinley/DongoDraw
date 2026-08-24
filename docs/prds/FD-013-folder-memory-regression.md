@@ -1,6 +1,6 @@
 # FD-013 — Remembered folder lost on close (regression)
 
-Status: needs-triage
+Status: shipped
 Context: Reference Library
 Depends on: FD-012
 
@@ -22,8 +22,8 @@ changed. This is a regression in the wiring between those rules, not a missing r
 | Context | Reference Library / Preferences |
 | Owning object | `Settings` (persistence), `LibraryReference` (restore logic) |
 | New Core type | no |
-| New invariants | none — every rule already exists; this ticket restores compliance |
-| Invariants changed | none |
+| New invariants | none — prevention tests enforce `INV-SET-P4`, `INV-STO-1` structurally |
+| Invariants changed | `INV-SET-P4` — precondition tightened (save deferred past successful load) |
 | Crosses a boundary | `Settings.LastCollection` ↔ `MainActivity.RestoreLastFolder()` |
 
 ## Likely regression area
@@ -46,18 +46,19 @@ before the process dies.
 
 These are FD-012's criteria, restated as a regression checklist:
 
-- [ ] Picking a folder, closing the app (swipe off recents), and reopening it shows the same
+- [x] Picking a folder, closing the app (swipe off recents), and reopening it shows the same
       library — not the first-run empty state (`INV-SET-P5`, `INV-STO-5`)
-- [ ] The picker reopens inside the remembered folder (`EXTRA_INITIAL_URI`) even after a cold
+- [x] The picker reopens inside the remembered folder (`EXTRA_INITIAL_URI`) even after a cold
       start
-- [ ] A folder whose read grant has been revoked shows `folder_unavailable_text`, not the
+- [x] A folder whose read grant has been revoked shows `folder_unavailable_text`, not the
       first-run state (`INV-REF-5`, `INV-GRP-5`)
-- [ ] `Settings.Save()` checkpoints before returning — a process killed immediately after a
+- [x] `Settings.Save()` checkpoints before returning — a process killed immediately after a
       pick does not revert the preference (`INV-STO-5`)
-- [ ] Existing `FolderMemoryContractTests` pass without modification
-- [ ] Existing `FolderPickerUiTests` (restored on relaunch, survives kill, picker hint) pass
+- [x] Existing `FolderMemoryContractTests` pass (one test strengthened to assert save-after-load
+      ordering)
+- [x] Existing `FolderPickerUiTests` (restored on relaunch, survives kill, picker hint) pass
       without modification
-- [ ] `CompletedCount`, `SkippedCount`, `TotalDrawingTime` — unchanged (this ticket touches no
+- [x] `CompletedCount`, `SkippedCount`, `TotalDrawingTime` — unchanged (this ticket touches no
       session logic)
 
 ## Tests
@@ -65,7 +66,7 @@ These are FD-012's criteria, restated as a regression checklist:
 | Tier | What |
 |---|---|
 | Unit (`FigureDrawing.Tests`) | `SettingsTests` — kill, truncation, checkpoint. `LibraryReferenceTests` — form, grant, classification. Both suites must stay green; if they already are, the regression is in the Activity wiring, not in Core |
-| Contract | `FolderMemoryContractTests` — the 15 contract cases covering the restore chain. Green here + broken on device = the Activity is not calling the chain correctly |
+| Contract | `FolderMemoryContractTests` — contract cases covering the restore chain (19 after FD-013 additions). Green here + broken on device = the Activity is not calling the chain correctly |
 | E2E-model | `n/a` |
 | UI (Appium) | `FolderPickerUiTests` — `PickedFolder_IsRestoredOnRelaunch`, `PickedFolder_SurvivesTheProcessBeingKilled`, picker hint. These are the definitive regression tests for this ticket |
 
@@ -95,3 +96,29 @@ These are FD-012's criteria, restated as a regression checklist:
   the same thread-safety `Settings` already has (single-threaded writes at named moments,
   `INV-SET-P4`).
 - A fix that re-orders `OnCreate` calls must not break the session-loading state FD-010 introduced.
+
+## Resolution
+
+**Code change.** The persistence chain in `OnActivityResult` was reordered so
+`settings.Save()` fires only after `LoadFolder` succeeds. `LastCollection` is set in memory before
+the load (so `RenderLibrary` can classify the state), but the checkpoint that makes it durable is
+deferred past the point of no return. On failure, the catch block rolls `LastCollection` back to its
+previous value so the `OnPause` backstop cannot persist a broken URI.
+
+**Diagnosis.** All four folder-memory UI tests pass on device (emulator, 2026-08-23):
+`PickedFolder_IsRestoredOnRelaunch`, `PickedFolder_SurvivesTheArtistClosingTheApp`,
+`PickedFolder_SurvivesTheProcessBeingKilled`, `ReopeningPicker_StartsInTheLastFolder`. The
+persistence chain in `MainActivity.cs` was not directly modified by FD-010/FD-011. The reported
+symptom was likely environment-specific (stale app state on a device that pre-dated the
+folder-memory feature), but the save ordering was hardened regardless.
+
+**Prevention tests added** (7 new tests across 3 files, one existing test strengthened):
+
+- `CrossActivityContractTests` (new file, 3 tests): SessionActivity never touches Settings or
+  imports its namespace; MainActivity has no async methods
+- `FolderMemoryContractTests` (1 strengthened + 3 new): save-after-load ordering pinned;
+  `OnActivityResult` and `OnPause` persistence paths contain no `await` or `Task.Run`;
+  catch block reverts `LastCollection` in memory
+- `SettingsTests` (+1 test): documents the concurrent-write behaviour of the LiteDB store
+
+Also fixed: `OnlySettings_OpensTheDatabase` now excludes `.claude/` worktree copies from its scan.

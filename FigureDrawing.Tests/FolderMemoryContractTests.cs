@@ -57,9 +57,9 @@ public class FolderMemoryContractTests
         Assert.DoesNotContain("GrantWriteUriPermission", Code, StringComparison.Ordinal);
     }
 
-    // The folder's identity is persisted, and persisted at the moment it is picked — Settings only
-    // reaches disk on Save (docs/ARCHITECTURE.md §6), and the pick is one of the named write
-    // moments (INV-SET-P4), so an assignment without one is forgotten on exit.
+    // The folder's identity is persisted, and persisted only after the load succeeds — a folder
+    // that fails to load must not be remembered (FD-013). The save is a named write moment
+    // (INV-SET-P4); an assignment without one is forgotten on exit.
     [Fact]
     public void PickingAFolder_PersistsItAsLastCollection()
     {
@@ -67,7 +67,19 @@ public class FolderMemoryContractTests
 
         var assignment = Regex.Match(body, @"settings\.LastCollection\s*=");
         Assert.True(assignment.Success, "The picked folder is no longer written to Settings.LastCollection.");
-        Assert.Contains("settings.Save();", body[assignment.Index..], StringComparison.Ordinal);
+
+        // LoadFolder must appear between the assignment and the save: the save is conditional on a
+        // successful load (FD-013), so the folder is only persisted when it can actually be opened.
+        var afterAssignment = body[assignment.Index..];
+        var loadIndex = afterAssignment.IndexOf("LoadFolder(", StringComparison.Ordinal);
+        Assert.True(loadIndex >= 0, "LoadFolder is no longer called after the LastCollection assignment.");
+
+        // No save before the load — a duplicate save before LoadFolder reintroduces FD-013.
+        var beforeLoad = afterAssignment[..loadIndex];
+        Assert.DoesNotContain("settings.Save()", beforeLoad, StringComparison.Ordinal);
+
+        var afterLoad = afterAssignment[loadIndex..];
+        Assert.Contains("settings.Save();", afterLoad, StringComparison.Ordinal);
     }
 
     // Only the root's identity is persisted, never its contents (INV-GRP-1): the pool is re-walked
@@ -243,5 +255,60 @@ public class FolderMemoryContractTests
         // The conditional has to test the hint itself: "contains an if" would be satisfied by
         // `if (true) intent.PutExtra(..., LastPickedDocumentUri())`.
         Assert.Matches(@"if\s*\(\s*LastPickedDocumentUri\(\)\s*(is|!=)", body[..attached]);
+    }
+
+    // FD-013 prevention (INV-SET-P4): the assignment-then-save in OnActivityResult must be
+    // synchronous. An await between `settings.LastCollection =` and `settings.Save()` turns a durable
+    // write into a WAL-only entry that a process kill silently reverts — the exact regression path
+    // FD-013 exposed.
+    [Fact]
+    public void ThePersistenceChain_InOnActivityResult_IsSynchronous()
+    {
+        var body = MethodBody("OnActivityResult");
+
+        Assert.DoesNotMatch(@"(?<!\w)await\s", body);
+        Assert.DoesNotContain("Task.Run", body, StringComparison.Ordinal);
+    }
+
+    // FD-013 (INV-SET-P4): a folder that fails to load must not be remembered. The catch block
+    // reverts the in-memory LastCollection so the OnPause backstop does not persist a broken URI —
+    // without this, every relaunch would restore into an error state.
+    [Fact]
+    public void AFailedFolderLoad_RevertsLastCollectionInMemory()
+    {
+        var body = MethodBody("OnActivityResult");
+
+        // The previous value must be captured before the try block — a capture inside the try after
+        // the new assignment would snapshot the failed URI instead of the one to roll back to.
+        var tryIndex = body.IndexOf("try", StringComparison.Ordinal);
+        Assert.True(tryIndex > 0, "OnActivityResult no longer has a try block.");
+        Assert.Matches(@"\w+\s*=\s*settings\.LastCollection\s*;", body[..tryIndex]);
+
+        var caught = body.IndexOf("catch (Exception", StringComparison.Ordinal);
+        Assert.True(caught >= 0, "OnActivityResult no longer catches a failed folder load.");
+
+        // The rollback must restore a captured variable, not null, empty, or a hardcoded URI.
+        // Negative lookahead excludes known-bad values without pinning the local's name (§11).
+        Assert.Matches(@"settings\.LastCollection\s*=\s*(?!null\b|"""")\w+\s*;", body[caught..]);
+
+        // The save must NOT appear in the catch block — it belongs on the success path only.
+        // Without this, moving settings.Save() into the catch would still pass the ordering test
+        // in PickingAFolder_PersistsItAsLastCollection (INV-STO-5).
+        Assert.DoesNotContain("settings.Save()", body[caught..], StringComparison.Ordinal);
+
+        // The library must be reset on failure so stale thumbnails don't linger on screen.
+        Assert.Contains("ResetLibrary()", body[caught..], StringComparison.Ordinal);
+    }
+
+    // The backstop write in OnPause is the last chance to persist before the process dies
+    // (INV-SET-P4). Making it async means the continuation may never run — Android kills the process
+    // as soon as OnPause returns, and an awaited save is still in flight at that point.
+    [Fact]
+    public void TheOnPauseBackstop_IsSynchronous()
+    {
+        var body = MethodBody("OnPause");
+
+        Assert.DoesNotMatch(@"(?<!\w)await\s", body);
+        Assert.DoesNotContain("Task.Run", body, StringComparison.Ordinal);
     }
 }

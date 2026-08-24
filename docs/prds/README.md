@@ -13,7 +13,6 @@ renumber an id.
 | ID | Title | Context |
 |----|-------|---------|
 | [FD-009](FD-009-async-reference-library.md) | Reference library loads without freezing the screen | Reference Library |
-| [FD-013](FD-013-folder-memory-regression.md) | Remembered folder lost on close (regression of FD-012) | Reference Library |
 
 FD-009 comes out of the repo-wide review of 2026-08-16, along with FD-010 and FD-011, which have
 since shipped. It is the remaining main-thread decode: the folder walk and up to 24 preview
@@ -40,3 +39,8 @@ because the failure budget it introduces is derived from the pool size.
 MVP set: the library the artist last opened is restored on launch, survives a process kill, and is
 where the picker reopens. Its criteria are `INV-REF-*`, `INV-SET-P4/P5`, `INV-GRP-5`, `INV-STO-5`
 and `INV-X-11` in [DOMAIN-MODEL.md](../DOMAIN-MODEL.md).
+
+[FD-013](FD-013-folder-memory-regression.md) (remembered folder lost on close — regression of
+FD-012) resolved: the save was moved to fire only after a successful folder load, and prevention
+tests (`CrossActivityContractTests`, synchronicity guards in `FolderMemoryContractTests`) now pin
+the isolation and ordering properties that prevent the class of regression.
