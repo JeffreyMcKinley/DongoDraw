@@ -1,0 +1,21 @@
+{
+  "$comment": [
+    "Per-contributor override for /design-pull and /design-push. Copy to sync.local.json, which is",
+    "gitignored, and fill in the ids of YOUR OWN Claude Design projects.",
+    "",
+    "Two individual Claude accounts cannot share a Design project, so each contributor works against",
+    "their own copies and the repo is the handoff. Without this file the skills fall back to the ids",
+    "in tokens.json, which are whoever set the mirror up first — fine for them, wrong for everyone",
+    "else, and pushing to another person's project is the one mistake here with no clean undo.",
+    "",
+    "Finding your ids:",
+    "  themeProjectId   DesignSync list_projects — it returns design-system projects you can write to",
+    "  designProjectId  NOT in list_projects (that listing is filtered to design systems). Open the",
+    "                   design and take the id out of the URL:",
+    "                   https://claude.ai/design/p/<designProjectId>?file=...",
+    "",
+    "Run /design-login once per session before either skill will work."
+  ],
+  "themeProjectId": "00000000-0000-0000-0000-000000000000",
+  "designProjectId": "00000000-0000-0000-0000-000000000000"
+}

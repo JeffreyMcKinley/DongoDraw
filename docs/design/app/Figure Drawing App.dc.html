@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="_ds/nocturne-b269d325-681f-43ec-8f5a-c312981067ca/styles.css">
+<script src="_ds/nocturne-b269d325-681f-43ec-8f5a-c312981067ca/_ds_bundle.js"></script>
+<script src="./image-slot.js"></script>
+<style>
+  body { margin: 0; background: var(--color-bg); color: var(--color-text); font-family: var(--font-body); }
+  a { color: var(--color-accent-300); text-decoration: none; }
+  a:hover { color: var(--color-accent-200); }
+  button { font-family: inherit; }
+  .app-tab:hover { color: var(--color-accent-300); }
+  .tool-chip:hover { border-color: var(--color-accent-600); }
+</style>
+</helmet>
+<div style="min-height:100vh;background:var(--color-bg);padding:28px 24px 48px;display:flex;flex-direction:column;gap:22px;align-items:flex-start">
+
+  <div style="display:flex;align-items:flex-end;gap:24px;flex-wrap:wrap">
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <div style="font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:var(--color-neutral-500)">Figure drawing · prototype</div>
+      <div style="font-family:var(--font-heading);font-weight:500;font-size:24px;letter-spacing:-0.01em">Timed pose practice</div>
+    </div>
+    <div class="seg" style="display:flex;gap:0">
+      <button class="seg-opt" onClick="{{ setPhone }}" style="{{ phoneSegStyle }}">Phone · 412</button>
+      <button class="seg-opt" onClick="{{ setFold }}" style="{{ foldSegStyle }}">Fold open · 812</button>
+    </div>
+    <div style="font-size:12px;color:var(--color-neutral-500);max-width:280px;line-height:1.5">Drop your own reference images onto the slots in Images.</div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;align-items:center;gap:10px">
+    <div style="{{ frameStyle }}">
+      <div style="height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 20px;font-size:11px;color:var(--color-neutral-400);flex:none">
+        <span>9:41</span>
+        <span style="display:flex;gap:8px;align-items:center"><span>Wi-Fi</span><span>82%</span></span>
+      </div>
+
+      <div style="flex:1;min-height:0;display:flex;flex-direction:column">
+
+        <sc-if value="{{ isSetup }}" hint-placeholder-val="{{ true }}">
+          <div style="flex:1;min-height:0;overflow:auto;padding:14px 18px 22px;display:flex;flex-direction:column;gap:18px">
+            <div style="display:flex;flex-direction:column;gap:3px">
+              <div style="font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:var(--color-neutral-500)">New session</div>
+              <div style="font-family:var(--font-heading);font-weight:500;font-size:26px;letter-spacing:-0.01em">Set the pace</div>
+            </div>
+
+            <div class="field" style="display:flex;flex-direction:column;gap:8px">
+              <label style="font-size:12px;color:var(--color-neutral-400)">Seconds per image</label>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button class="tool-chip" onClick="{{ setSec30 }}" style="{{ sec30Style }}">30s</button>
+                <button class="tool-chip" onClick="{{ setSec60 }}" style="{{ sec60Style }}">1m</button>
+                <button class="tool-chip" onClick="{{ setSec120 }}" style="{{ sec120Style }}">2m</button>
+                <button class="tool-chip" onClick="{{ setSec300 }}" style="{{ sec300Style }}">5m</button>
+              </div>
+              <input class="input" type="number" min="1" value="{{ seconds }}" onChange="{{ onSeconds }}" style="width:100%;box-sizing:border-box">
+            </div>
+
+            <div class="field" style="display:flex;flex-direction:column;gap:8px">
+              <label style="font-size:12px;color:var(--color-neutral-400)">Number of images</label>
+              <input class="input" type="number" min="1" value="{{ count }}" onChange="{{ onCount }}" style="width:100%;box-sizing:border-box">
+            </div>
+
+            <div class="field" style="display:flex;flex-direction:column;gap:8px">
+              <label style="font-size:12px;color:var(--color-neutral-400)">Break between poses</label>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button class="tool-chip" onClick="{{ setBreak0 }}" style="{{ break0Style }}">None</button>
+                <button class="tool-chip" onClick="{{ setBreak5 }}" style="{{ break5Style }}">5s</button>
+                <button class="tool-chip" onClick="{{ setBreak15 }}" style="{{ break15Style }}">15s</button>
+                <button class="tool-chip" onClick="{{ setBreak60 }}" style="{{ break60Style }}">1m</button>
+              </div>
+            </div>
+
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;background:var(--color-surface);border-radius:var(--radius-md);box-shadow:var(--shadow-sm)">
+              <div style="display:flex;flex-direction:column;gap:2px">
+                <div style="font-size:14px">{{ poolLabel }}</div>
+                <div style="font-size:12px;color:var(--color-neutral-500)">Your dropped references</div>
+              </div>
+              <button class="btn btn-ghost" onClick="{{ goLibrary }}">Change</button>
+            </div>
+
+            <div style="display:flex;flex-direction:column;gap:8px;margin-top:auto">
+              <button class="btn btn-primary btn-block" onClick="{{ startSession }}" style="height:48px;font-size:15px">Start session</button>
+              <div style="font-size:12px;color:var(--color-neutral-500);text-align:center">{{ estimateLabel }}</div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isLibrary }}">
+          <div style="flex:1;min-height:0;display:flex;flex-direction:column;padding:14px 18px 18px;gap:14px">
+            <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px">
+              <div style="font-family:var(--font-heading);font-weight:500;font-size:22px;letter-spacing:-0.01em">Images</div>
+              <div style="font-size:12px;color:var(--color-neutral-500)">{{ poolLabel }}</div>
+            </div>
+            <div style="flex:1;min-height:0;overflow:auto;display:grid;grid-template-columns:{{ libraryCols }};gap:10px;align-content:start">
+              <sc-for list="{{ slots }}" as="s" hint-placeholder-count="8">
+                <div style="position:relative;aspect-ratio:3/4;border-radius:var(--radius-md);overflow:hidden;box-shadow:var(--shadow-sm)">
+                  <image-slot id="{{ s.id }}" shape="rect" placeholder="Drop reference"></image-slot>
+                </div>
+              </sc-for>
+            </div>
+            <div style="font-size:12px;color:var(--color-neutral-500);line-height:1.5">Drag image files onto a slot, or tap to browse. Slots stay filled between sessions.</div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isViewer }}">
+          <div style="flex:1;min-height:0;display:flex;flex-direction:{{ viewerDirection }};gap:0">
+
+            <div style="flex:1;min-height:0;position:relative;background:#0f1119;overflow:hidden">
+              <div style="{{ stageStyle }}">
+                <sc-for list="{{ slots }}" as="s" hint-placeholder-count="8">
+                  <div style="{{ s.wrapStyle }}">
+                    <image-slot id="{{ s.id }}" shape="rect" fit="contain" placeholder="Drop reference"></image-slot>
+                  </div>
+                </sc-for>
+              </div>
+
+              <sc-if value="{{ grid }}">
+                <div style="position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(to right,rgba(233,233,237,0.18) 1px,transparent 1px),linear-gradient(to bottom,rgba(233,233,237,0.18) 1px,transparent 1px);background-size:33.333% 33.333%"></div>
+              </sc-if>
+
+              <sc-if value="{{ onBreak }}">
+                <div style="position:absolute;inset:0;background:rgba(22,24,38,0.92);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px">
+                  <div style="font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:var(--color-accent-400)">Break</div>
+                  <div style="font-family:var(--font-heading);font-size:44px;font-weight:500;letter-spacing:-0.02em">{{ clock }}</div>
+                  <div style="font-size:13px;color:var(--color-neutral-500)">Next pose coming up</div>
+                  <button class="btn btn-secondary" onClick="{{ skipBreak }}" style="margin-top:12px;min-width:140px">Next image</button>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ paused }}">
+                <div style="position:absolute;inset:0;background:rgba(22,24,38,0.9);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:24px">
+                  <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
+                    <div style="font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:var(--color-neutral-500)">Paused</div>
+                    <div style="font-family:var(--font-heading);font-size:44px;font-weight:500;letter-spacing:-0.02em">{{ clock }}</div>
+                    <div style="font-size:13px;color:var(--color-neutral-500)">{{ progressLabel }} · {{ elapsedLabel }} drawn</div>
+                  </div>
+                  <div style="display:flex;flex-direction:column;gap:10px;width:100%;max-width:260px">
+                    <button class="btn btn-primary btn-block" onClick="{{ resume }}" style="height:46px">Resume</button>
+                    <button class="btn btn-secondary btn-block" onClick="{{ skip }}">Skip this image</button>
+                    <button class="btn btn-ghost btn-block" onClick="{{ endSession }}">End session</button>
+                  </div>
+                </div>
+              </sc-if>
+            </div>
+
+            <div style="{{ railStyle }}">
+              <div style="display:flex;align-items:center;gap:12px;{{ railHeadAlign }}">
+                <svg width="46" height="46" viewBox="0 0 46 46" style="flex:none;transform:rotate(-90deg)">
+                  <circle cx="23" cy="23" r="20" fill="none" stroke="#3f424d" stroke-width="3"></circle>
+                  <circle cx="23" cy="23" r="20" fill="none" stroke="{{ ringStroke }}" stroke-width="3" stroke-linecap="round" stroke-dasharray="125.6" stroke-dashoffset="{{ ringOffset }}"></circle>
+                </svg>
+                <div style="display:flex;flex-direction:column;gap:2px">
+                  <div style="{{ clockStyle }}">{{ clock }}</div>
+                  <div style="font-size:12px;color:var(--color-neutral-500)">{{ progressLabel }}</div>
+                </div>
+                <div style="flex:1"></div>
+                <button class="btn btn-ghost" onClick="{{ pause }}">Pause</button>
+              </div>
+
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button class="tool-chip" onClick="{{ toggleGray }}" style="{{ grayStyle }}">Grayscale</button>
+                <button class="tool-chip" onClick="{{ toggleFlip }}" style="{{ flipStyle }}">Flip</button>
+                <button class="tool-chip" onClick="{{ toggleGrid }}" style="{{ gridStyle }}">Grid</button>
+                <button class="tool-chip" onClick="{{ toggleBlur }}" style="{{ blurStyle }}">Blur</button>
+                <button class="tool-chip" onClick="{{ zoomOut }}" style="{{ chipBase }}">−</button>
+                <button class="tool-chip" onClick="{{ zoomIn }}" style="{{ chipBase }}">+</button>
+              </div>
+
+              <div style="{{ railActionsStyle }}">
+                <button class="btn btn-secondary" onClick="{{ skip }}" style="flex:1">Skip</button>
+                <button class="btn btn-primary" onClick="{{ next }}" style="flex:1">Next</button>
+                <button class="btn btn-ghost" onClick="{{ endSession }}">End</button>
+              </div>
+
+              <sc-if value="{{ wide }}">
+                <div style="margin-top:auto;display:flex;flex-direction:column;gap:8px">
+                  <div style="font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:var(--color-neutral-500)">Session progress</div>
+                  <div style="display:flex;gap:4px;flex-wrap:wrap">
+                    <sc-for list="{{ pips }}" as="p" hint-placeholder-count="12">
+                      <div style="{{ p.style }}"></div>
+                    </sc-for>
+                  </div>
+                  <div style="font-size:12px;color:var(--color-neutral-500)">{{ elapsedLabel }} drawn · {{ skipLabel }}</div>
+                </div>
+              </sc-if>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isSummary }}">
+          <div style="flex:1;min-height:0;overflow:auto;padding:22px 18px;display:flex;flex-direction:column;gap:20px">
+            <div style="display:flex;flex-direction:column;gap:3px">
+              <div style="font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:var(--color-accent-400)">Session complete</div>
+              <div style="font-family:var(--font-heading);font-weight:500;font-size:26px;letter-spacing:-0.01em">Good session</div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+              <div class="card" style="display:flex;flex-direction:column;gap:4px">
+                <div class="card-kicker">Images drawn</div>
+                <div style="font-family:var(--font-heading);font-size:32px;font-weight:500">{{ completed }}</div>
+              </div>
+              <div class="card" style="display:flex;flex-direction:column;gap:4px">
+                <div class="card-kicker">Time drawing</div>
+                <div style="font-family:var(--font-heading);font-size:32px;font-weight:500">{{ elapsedLabel }}</div>
+              </div>
+              <div class="card" style="display:flex;flex-direction:column;gap:4px">
+                <div class="card-kicker">Average pose</div>
+                <div style="font-family:var(--font-heading);font-size:32px;font-weight:500">{{ avgLabel }}</div>
+              </div>
+              <div class="card" style="display:flex;flex-direction:column;gap:4px">
+                <div class="card-kicker">Skipped</div>
+                <div style="font-family:var(--font-heading);font-size:32px;font-weight:500">{{ skipped }}</div>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px;margin-top:auto">
+              <button class="btn btn-primary btn-block" onClick="{{ startSession }}" style="height:46px">Run it again</button>
+              <button class="btn btn-ghost btn-block" onClick="{{ goSetup }}">Change settings</button>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isSettings }}">
+          <div style="flex:1;min-height:0;overflow:auto;padding:14px 18px 18px;display:flex;flex-direction:column;gap:14px">
+            <div style="font-family:var(--font-heading);font-weight:500;font-size:22px;letter-spacing:-0.01em">Settings</div>
+            <sc-for list="{{ settingRows }}" as="r" hint-placeholder-count="4">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 14px;background:var(--color-surface);border-radius:var(--radius-md);box-shadow:var(--shadow-sm)">
+                <div style="display:flex;flex-direction:column;gap:2px">
+                  <div style="font-size:14px">{{ r.label }}</div>
+                  <div style="font-size:12px;color:var(--color-neutral-500);line-height:1.4">{{ r.help }}</div>
+                </div>
+                <button class="tool-chip" onClick="{{ r.toggle }}" style="{{ r.style }}">{{ r.value }}</button>
+              </div>
+            </sc-for>
+            <div style="font-size:12px;color:var(--color-neutral-500);line-height:1.5;padding-top:4px">Reference images stay on the device. Nothing is uploaded.</div>
+          </div>
+        </sc-if>
+
+      </div>
+
+      <sc-if value="{{ showTabs }}" hint-placeholder-val="{{ true }}">
+        <div style="flex:none;display:flex;border-top:1px solid var(--color-neutral-800);background:var(--color-surface)">
+          <button class="app-tab" onClick="{{ goSetup }}" style="{{ tabSetupStyle }}">Session</button>
+          <button class="app-tab" onClick="{{ goLibrary }}" style="{{ tabLibraryStyle }}">Images</button>
+          <button class="app-tab" onClick="{{ goSettings }}" style="{{ tabSettingsStyle }}">Settings</button>
+        </div>
+      </sc-if>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:900,&quot;height&quot;:1010},&quot;device&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;phone&quot;,&quot;fold&quot;],&quot;default&quot;:&quot;phone&quot;,&quot;tsType&quot;:&quot;'phone' | 'fold'&quot;},&quot;startScreen&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;setup&quot;,&quot;library&quot;,&quot;viewer&quot;,&quot;summary&quot;,&quot;settings&quot;],&quot;default&quot;:&quot;setup&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;poolSize&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:8,&quot;min&quot;:2,&quot;max&quot;:16,&quot;tsType&quot;:&quot;number&quot;}}">
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    const pool = Math.max(2, this.props.poolSize ?? 8);
+    this.state = {
+      screen: this.props.startScreen ?? 'setup',
+      wide: (this.props.device ?? 'phone') === 'fold',
+      seconds: 60, count: 12, breakSecs: 15,
+      poolSize: pool,
+      order: [], cursor: 0, completed: 0, skipped: 0, elapsed: 0,
+      remaining: 60, phase: 'pose', paused: false,
+      gray: false, flip: false, grid: false, blur: false, zoom: 1,
+      shuffle: true, awake: true, chime: false, warn10: true
+    };
+  }
+
+  componentDidMount() {
+    this.timer = setInterval(() => this.tick(), 250);
+  }
+  componentWillUnmount() { clearInterval(this.timer); }
+
+  tick() {
+    const s = this.state;
+    if (s.screen !== 'viewer' || s.paused) return;
+    const remaining = s.remaining - 0.25;
+    if (remaining > 0) {
+      if (s.warn10 && s.phase === 'pose' && Math.ceil(remaining) === 10 && Math.ceil(s.remaining) === 11) this.beep();
+      this.setState({ remaining, elapsed: s.phase === 'pose' ? s.elapsed + 0.25 : s.elapsed });
+      return;
+    }
+    this.advance();
+  }
+
+  makeOrder() {
+    const n = this.state.poolSize;
+    const total = Math.max(this.state.count * 2, n * 2);
+    const out = [];
+    while (out.length < total) {
+      const pass = Array.from({ length: n }, (_, i) => i);
+      if (this.state.shuffle) {
+        for (let i = pass.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [pass[i], pass[j]] = [pass[j], pass[i]];
+        }
+      }
+      out.push(...pass);
+    }
+    return out;
+  }
+
+  advance() {
+    const s = this.state;
+    if (s.phase === 'break') {
+      this.setState({ phase: 'pose', cursor: s.cursor + 1, remaining: s.seconds });
+      return;
+    }
+    const completed = s.completed + 1;
+    if (completed >= s.count) { this.setState({ completed, screen: 'summary' }); return; }
+    if (s.breakSecs > 0) { this.setState({ completed, phase: 'break', remaining: s.breakSecs }); return; }
+    this.setState({ completed, cursor: s.cursor + 1, remaining: s.seconds });
+  }
+
+  beep() {
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      this.audio = this.audio || new Ctx();
+      const t0 = this.audio.currentTime;
+      const osc = this.audio.createOscillator();
+      const gain = this.audio.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = 880;
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.exponentialRampToValueAtTime(0.18, t0 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.22);
+      osc.connect(gain).connect(this.audio.destination);
+      osc.start(t0);
+      osc.stop(t0 + 0.24);
+    } catch (e) {}
+  }
+
+  fmt(t) {
+    const v = Math.max(0, Math.round(t));
+    const m = Math.floor(v / 60), sec = v % 60;
+    return m > 0 ? m + ':' + String(sec).padStart(2, '0') : '0:' + String(sec).padStart(2, '0');
+  }
+
+  chip(active) {
+    return 'appearance:none;cursor:pointer;padding:8px 13px;min-height:36px;border-radius:var(--radius-md);font-size:13px;transition:border-color .15s,background .15s;' +
+      (active
+        ? 'border:1px solid var(--color-accent);background:color-mix(in srgb, var(--color-accent) 16%, transparent);color:var(--color-accent-200);'
+        : 'border:1px solid var(--color-neutral-800);background:transparent;color:var(--color-neutral-300);');
+  }
+
+  tab(active) {
+    return 'flex:1;appearance:none;border:none;background:transparent;cursor:pointer;padding:14px 0 18px;font-size:12px;letter-spacing:0.04em;min-height:52px;' +
+      (active ? 'color:var(--color-accent-300);box-shadow:inset 0 2px 0 var(--color-accent);' : 'color:var(--color-neutral-500);');
+  }
+
+  renderVals() {
+    const s = this.state;
+    const wide = s.wide;
+    const frameW = wide ? 812 : 412;
+    const frameH = wide ? 880 : 915;
+    const dur = s.phase === 'break' ? s.breakSecs : s.seconds;
+    const active = s.order.length ? s.order[s.cursor % s.order.length] : 0;
+
+    const slots = Array.from({ length: s.poolSize }, (_, i) => ({
+      id: 'pose-' + (i + 1),
+      wrapStyle: 'position:absolute;inset:0;transition:opacity .25s;' +
+        (i === active ? 'opacity:1;' : 'opacity:0;pointer-events:none;')
+    }));
+
+    const pips = Array.from({ length: s.count }, (_, i) => ({
+      style: 'width:10px;height:10px;border-radius:2px;background:' +
+        (i < s.completed ? 'var(--color-accent)' : 'var(--color-neutral-800)')
+    }));
+
+    const settingRows = [
+      { label: 'Shuffle images', help: 'Random order, every image once per pass', value: s.shuffle ? 'On' : 'Off',
+        style: this.chip(s.shuffle), toggle: () => this.setState({ shuffle: !s.shuffle }) },
+      { label: 'Keep screen awake', help: 'Prevents sleep during a session', value: s.awake ? 'On' : 'Off',
+        style: this.chip(s.awake), toggle: () => this.setState({ awake: !s.awake }) },
+      { label: 'Chime on change', help: 'Short tone when the pose changes', value: s.chime ? 'On' : 'Off',
+        style: this.chip(s.chime), toggle: () => this.setState({ chime: !s.chime }) },
+      { label: '10-second warning', help: 'Beeps when 10 seconds are left on a pose', value: s.warn10 ? 'On' : 'Off',
+        style: this.chip(s.warn10), toggle: () => this.setState({ warn10: !s.warn10 }) },
+      { label: 'Start in grayscale', help: 'Useful for value studies', value: s.gray ? 'On' : 'Off',
+        style: this.chip(s.gray), toggle: () => this.setState({ gray: !s.gray }) }
+    ];
+
+    const filters = [];
+    if (s.gray) filters.push('grayscale(1)');
+    if (s.blur) filters.push('blur(6px)');
+
+    return {
+      wide,
+      isSetup: s.screen === 'setup', isLibrary: s.screen === 'library',
+      isViewer: s.screen === 'viewer', isSummary: s.screen === 'summary',
+      isSettings: s.screen === 'settings',
+      showTabs: s.screen !== 'viewer',
+
+      frameStyle: 'width:' + frameW + 'px;height:' + frameH + 'px;display:flex;flex-direction:column;background:var(--color-bg);border-radius:26px;overflow:hidden;box-shadow:var(--shadow-lg);transition:width .3s ease',
+      phoneSegStyle: 'cursor:pointer;' + (wide ? '' : 'background:color-mix(in srgb, var(--color-accent) 16%, transparent);color:var(--color-accent-200);'),
+      foldSegStyle: 'cursor:pointer;' + (wide ? 'background:color-mix(in srgb, var(--color-accent) 16%, transparent);color:var(--color-accent-200);' : ''),
+      setPhone: () => this.setState({ wide: false }),
+      setFold: () => this.setState({ wide: true }),
+
+      seconds: s.seconds, count: s.count,
+      onSeconds: (e) => this.setState({ seconds: Math.max(1, parseInt(e.target.value || '1', 10)) }),
+      onCount: (e) => this.setState({ count: Math.max(1, parseInt(e.target.value || '1', 10)) }),
+      setSec30: () => this.setState({ seconds: 30 }), setSec60: () => this.setState({ seconds: 60 }),
+      setSec120: () => this.setState({ seconds: 120 }), setSec300: () => this.setState({ seconds: 300 }),
+      sec30Style: this.chip(s.seconds === 30), sec60Style: this.chip(s.seconds === 60),
+      sec120Style: this.chip(s.seconds === 120), sec300Style: this.chip(s.seconds === 300),
+      setBreak0: () => this.setState({ breakSecs: 0 }), setBreak5: () => this.setState({ breakSecs: 5 }),
+      setBreak15: () => this.setState({ breakSecs: 15 }), setBreak60: () => this.setState({ breakSecs: 60 }),
+      break0Style: this.chip(s.breakSecs === 0), break5Style: this.chip(s.breakSecs === 5),
+      break15Style: this.chip(s.breakSecs === 15), break60Style: this.chip(s.breakSecs === 60),
+      poolLabel: s.poolSize + ' images ready',
+      estimateLabel: 'About ' + this.fmt(s.count * s.seconds + Math.max(0, s.count - 1) * s.breakSecs) + ' including breaks',
+
+      libraryCols: wide ? 'repeat(4, 1fr)' : 'repeat(2, 1fr)',
+      slots, pips, settingRows,
+
+      viewerDirection: wide ? 'row' : 'column',
+      stageStyle: 'position:absolute;inset:0;transition:filter .2s,transform .2s;' +
+        (filters.length ? 'filter:' + filters.join(' ') + ';' : '') +
+        'transform:scale(' + s.zoom + ')' + (s.flip ? ' scaleX(-1)' : ''),
+      railStyle: (wide
+        ? 'width:288px;flex:none;border-left:1px solid var(--color-neutral-800);'
+        : 'flex:none;border-top:1px solid var(--color-neutral-800);') +
+        'background:var(--color-surface);padding:16px 16px 22px;display:flex;flex-direction:column;gap:14px',
+      railHeadAlign: wide ? 'flex-wrap:wrap' : '',
+      railActionsStyle: 'display:flex;gap:8px;' + (wide ? 'flex-wrap:wrap' : ''),
+
+      clock: this.fmt(s.remaining),
+      clockStyle: 'font-family:var(--font-heading);font-size:26px;font-weight:500;letter-spacing:-0.01em;font-variant-numeric:tabular-nums;transition:color .2s;' +
+        (s.warn10 && s.phase === 'pose' && !s.paused && s.remaining <= 10 ? 'color:var(--color-accent-300);' : ''),
+      ringStroke: s.warn10 && s.phase === 'pose' && !s.paused && s.remaining <= 10 ? '#c7bff0' : '#9184d9',
+      ringOffset: 125.6 * (1 - Math.max(0, Math.min(1, s.remaining / Math.max(1, dur)))),
+      progressLabel: 'Image ' + Math.min(s.completed + 1, s.count) + ' of ' + s.count,
+      elapsedLabel: this.fmt(s.elapsed),
+      skipLabel: s.skipped + ' skipped',
+      completed: s.completed, skipped: s.skipped,
+      avgLabel: this.fmt(s.completed ? s.elapsed / s.completed : 0),
+      onBreak: s.phase === 'break' && !s.paused,
+      paused: s.paused, grid: s.grid,
+
+      grayStyle: this.chip(s.gray), flipStyle: this.chip(s.flip),
+      gridStyle: this.chip(s.grid), blurStyle: this.chip(s.blur), chipBase: this.chip(false),
+      toggleGray: () => this.setState({ gray: !s.gray }),
+      toggleFlip: () => this.setState({ flip: !s.flip }),
+      toggleGrid: () => this.setState({ grid: !s.grid }),
+      toggleBlur: () => this.setState({ blur: !s.blur }),
+      zoomIn: () => this.setState({ zoom: Math.min(2.5, s.zoom + 0.2) }),
+      zoomOut: () => this.setState({ zoom: Math.max(1, s.zoom - 0.2) }),
+
+      pause: () => this.setState({ paused: true }),
+      resume: () => this.setState({ paused: false }),
+      skip: () => this.setState({ cursor: s.cursor + 1, skipped: s.skipped + 1, remaining: s.seconds, phase: 'pose', paused: false }),
+      skipBreak: () => this.setState({ phase: 'pose', cursor: s.cursor + 1, remaining: s.seconds }),
+      next: () => { this.advance(); },
+      endSession: () => this.setState({ screen: 'summary', paused: false }),
+      startSession: () => this.setState({
+        screen: 'viewer', order: this.makeOrder(), cursor: 0, completed: 0, skipped: 0,
+        elapsed: 0, remaining: s.seconds, phase: 'pose', paused: false, zoom: 1
+      }),
+      goSetup: () => this.setState({ screen: 'setup' }),
+      goLibrary: () => this.setState({ screen: 'library' }),
+      goSettings: () => this.setState({ screen: 'settings' }),
+      tabSetupStyle: this.tab(s.screen === 'setup' || s.screen === 'summary'),
+      tabLibraryStyle: this.tab(s.screen === 'library'),
+      tabSettingsStyle: this.tab(s.screen === 'settings')
+    };
+  }
+}
+</script>
+</body>
+</html>
