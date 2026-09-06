@@ -211,6 +211,7 @@ domain service, port) decides which of these apply.
 - Verify security considerations (input sanitization, sensitive data handling)
 - Confirm invariants keep their tests: a new or changed rule in `docs/DOMAIN-MODEL.md` terms needs
   a named unit test, and a deleted invariant needs to be acknowledged rather than dropped quietly
+- Check for excessive comments. If something needs a lot of comments to explain it, it is probably too complex. Refactor for clarity instead of commenting around complexity.
 
 **Review Structure**
 

@@ -99,6 +99,14 @@ classes (`.tool-chip`, `.btn-*`, `.card`, `.input`, the tab bar) are the widget 
 `Resources/values/styles.xml`. Retune the system there rather than styling a control inline; a
 one-off `android:background` on a button is the same kind of violation as a rule in an Activity.
 
+Nocturne itself lives outside this repo, on a Claude Design account, and two individual accounts
+cannot share one. `docs/design/` therefore holds a checked-in copy of the system's token file plus
+`tokens.json`, the reviewed bridge from its CSS variables to the Android resource names above —
+which makes the *repo*, not either Design project, the source of truth, and lets two people
+collaborate on the look through git. `NocturneTokenContractTests` asserts both edges of that
+bridge, so neither an upstream retune nor a drifting Android resource can pass silently. Read
+[docs/design/README.md](design/README.md) before changing a token on either side.
+
 **Typeface.** The system's font, Inter, is bundled at `Resources/font/` (weights 400/500/600, the
 same three the design system imports) under the SIL Open Font Licence — see
 `docs/third-party-licenses/`. It is what puts the app's minimum at **API 26**: framework font

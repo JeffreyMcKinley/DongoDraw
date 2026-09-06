@@ -15,6 +15,19 @@ renumber an id.
 |----|-------|---------|
 | [FD-014](FD-014-countdown-warning-beep.md) | Countdown warning beep at 10 seconds remaining | Session Execution / Preferences |
 | [FD-015](FD-015-skip-break-button.md) | Skip break button ("Ready") during inter-pose delay | Session Execution |
+| [FD-016](FD-016-comment-diet.md) | Comment diet — multi-ticket PRD, one PR per domain object | All contexts |
+| [FD-017](FD-017-comment-diet-reference-library.md) | Comment diet: `ReferenceLibrary` and `IDocumentTree` | Reference Library |
+| [FD-018](FD-018-comment-diet-library-reference.md) | Comment diet: `LibraryReference` | Reference Library |
+| [FD-019](FD-019-comment-diet-session-setup.md) | Comment diet: `SessionSetup` and `SessionConfig` | Session Setup |
+| [FD-020](FD-020-comment-diet-drawing-session.md) | Comment diet: `DrawingSession<TImage>` | Session Execution |
+| [FD-021](FD-021-comment-diet-viewer-tools.md) | Comment diet: `ViewerTools` | Session Execution |
+| [FD-022](FD-022-comment-diet-settings.md) | Comment diet: `Settings` | Preferences |
+| [FD-023](FD-023-comment-diet-rendering-services.md) | Comment diet: the rendering services | Rendering |
+| [FD-024](FD-024-comment-diet-library-loading.md) | Comment diet: the library load machinery | Reference Library |
+| [FD-025](FD-025-comment-diet-main-activity.md) | Comment diet: `MainActivity` | Reference Library / Session Setup / Preferences |
+| [FD-026](FD-026-comment-diet-session-activity.md) | Comment diet: `SessionActivity` | Session Execution |
+| [FD-027](FD-027-comment-diet-test-suites.md) | Comment diet: the test suites (narrow — why-comments stay) | All contexts |
+| [FD-028](FD-028-comment-density-guard.md) | The comment diet holds — density guard test | Repo-level enforcement |
 
 
 ## Shipped
