@@ -23,7 +23,7 @@ namespace FigureDrawing
 
     // Reads a reference library off the UI thread: the recursive Storage Access Framework walk (one
     // blocking provider query per folder) plus the preview decodes, which together stalled launch
-    // for seconds on a folder of a few thousand images (FD-009).
+    // for seconds on a folder of a few thousand images (#4).
     //
     // This is the app's one owner of background work and of abandoning it. The rules the screen
     // depends on:

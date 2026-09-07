@@ -615,7 +615,7 @@ namespace FigureDrawing
                 // can cost them the one they still use. Re-picking the same folder releases nothing.
                 ReleaseSupersededGrants(treeUri.ToString());
 
-                // FD-013 wants the folder persisted only once it is known to be usable, and FD-009
+                // #8 wants the folder persisted only once it is known to be usable, and #4
                 // made the walk asynchronous — so "usable" is established *here*, synchronously,
                 // rather than by waiting on a load that has not run yet. This is the step that
                 // actually fails for a folder that cannot be opened: no document id means no tree to
@@ -717,7 +717,7 @@ namespace FigureDrawing
 
                 // The count is logged by the load itself when it lands: LoadFolder returns as soon
                 // as the walk is handed off, so reading library.Count here would report the pool
-                // from before it (FD-009).
+                // from before it (#4).
                 LoadFolder(treeUri);
             }
             catch (Exception error)
@@ -975,7 +975,7 @@ namespace FigureDrawing
 
                 bitmap?.Dispose();
 
-                // The view's own peers go too. Until FD-009 the grid was built once per launch and
+                // The view's own peers go too. Until #4 the grid was built once per launch and
                 // leaving these to a finalizer cost nothing; it is now rebuilt on every return to
                 // the screen, and an undisposed ImageView keeps its Java View — and through it this
                 // Activity — reachable until a managed GC plus finalizer pass (§8).

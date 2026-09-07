@@ -243,7 +243,7 @@ public class ReferenceLibraryTests
         Assert.Equal(new[] { "a", "b" }, reloaded.Pool);
     }
 
-    // A walk that is abandoned part-way stops being answered by the tree (FD-009 pairs the SAF
+    // A walk that is abandoned part-way stops being answered by the tree (#4 pairs the SAF
     // adapter with an abandonment check, so a superseded load's queries return nothing). The domain
     // side is an ordinary partial pool in encounter order, with no throw: membership is
     // whatever the tree reports now (INV-GRP-1) and a query that yields nothing is the answer the
@@ -510,7 +510,7 @@ public class ReferenceLibraryTests
 
         tree.Failing = true;
 
-        // A re-walk is a *new* library, not a second walk on the live one (FD-009 made Enumerate
+        // A re-walk is a *new* library, not a second walk on the live one (#4 made Enumerate
         // private for exactly this reason), so a provider that starts throwing cannot reach the pool
         // the screen is already showing: the failure happens while building the replacement, and the
         // replacement is never assigned. The screen catches it and shows the unavailable message,

@@ -222,7 +222,7 @@ internal sealed class AppiumGuard(AndroidDriver driver)
         Assert.NotNull(WaitForId("pick_button", TimeSpan.FromSeconds(10)));
 
         // Wait for the load to reach a terminal state whether or not a count was asked for. The walk
-        // is asynchronous since FD-009, so a caller that goes straight on to assert Start is enabled
+        // is asynchronous since #4, so a caller that goes straight on to assert Start is enabled
         // would otherwise race the load — Start is gated on the pool being non-empty.
         //
         // Keyed on the loading caption clearing, not on the count: the pool is deliberately retained
@@ -235,7 +235,7 @@ internal sealed class AppiumGuard(AndroidDriver driver)
 
         if (expected == 0)
         {
-            // The label's *text*, not merely its presence: since FD-009 the same view carries the
+            // The label's *text*, not merely its presence: since #4 the same view carries the
             // loading caption while the folder is being read, so waiting for the view alone would
             // pass the instant the walk started and stop asserting anything about the outcome.
             Assert.True(
@@ -266,7 +266,7 @@ internal sealed class AppiumGuard(AndroidDriver driver)
     }
 
     // Waits for the library pane to settle on "this folder holds no images", as opposed to the
-    // loading caption the same label shows while the walk is running (FD-009). The expected wording
+    // loading caption the same label shows while the walk is running (#4). The expected wording
     // is owned by UiTestEnvironment so a copy edit in strings.xml has one place to be reflected.
     public bool WaitForEmptyFolderMessage(TimeSpan timeout) =>
         WaitUntil(_ => EmptyLabelText().Contains(
@@ -281,7 +281,7 @@ internal sealed class AppiumGuard(AndroidDriver driver)
     }
 
     // Waits for the library pane to report exactly this many images. The load is asynchronous since
-    // FD-009, so every assertion about the pool has to be a wait rather than a point read.
+    // #4, so every assertion about the pool has to be a wait rather than a point read.
     public bool WaitForLibraryCount(int expected, TimeSpan timeout) =>
         WaitUntil(_ => LibraryCount() == expected, timeout);
 
@@ -309,7 +309,7 @@ internal sealed class AppiumGuard(AndroidDriver driver)
             .Contains(activityName, StringComparison.Ordinal), timeout);
 
     // How many preview tiles the reference grid is actually showing. Distinct from LibraryCount,
-    // which reads the pool's size: since FD-009 the pool can be populated while the grid is empty
+    // which reads the pool's size: since #4 the pool can be populated while the grid is empty
     // (released on stop, rebuilt on start), and telling those apart is the point.
     //
     // Counted structurally — ImageViews inside image_container — rather than by content description.

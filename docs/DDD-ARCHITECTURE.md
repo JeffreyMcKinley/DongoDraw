@@ -7,7 +7,7 @@ numbered invariants live in a companion document, [DOMAIN-MODEL.md](DOMAIN-MODEL
 a bounded context that cannot live inside `FigureDrawing.Core` is a modelling mistake, not a
 reason to put a rule in an Activity.
 
-Derived from the code as of FD-009, following the `v3-ddd-architecture` skill. Two of that
+Derived from the code as of #4, following the `v3-ddd-architecture` skill. Two of that
 skill's prescriptions are **deliberately not adopted**: the microkernel/plugin runtime and a
 dependency-injection container. This is a single-user offline app of ~2,000 lines with no
 extension points and no third-party modules; a kernel registry would add indirection without
@@ -64,7 +64,7 @@ Supporting, deliberately outside the four: **Rendering** (`ImageDecoding`, `Bitm
 policy of §8 and the legibility policy of the viewing aids. It is a shared technical service, not a
 context, and `BitmapMath` and `GridContrast` are the pieces of it pure enough to live in Core.
 
-A second supporting group since FD-009: **Background work** (`LibraryLoader`, and in Core
+A second supporting group since #4: **Background work** (`LibraryLoader`, and in Core
 `LoadGeneration` and `LibraryLoadState`). Also no domain rules — it decides which in-flight load may
 write the screen and whether a re-walk keeps the pool it is showing (`INV-X-13`). The two Core
 pieces are there because they are the parts a test can execute; the loader stays Android-side
@@ -305,7 +305,7 @@ Live findings, ordered by how much they cost. None is a blocker; each has a stat
    to this class, and moved every *rule* it could into `LibraryReference` instead of splitting the
    screen.
 
-   **Partly closed by FD-009**, which took the first split: the folder walk, the preview decodes,
+   **Partly closed by #4**, which took the first split: the folder walk, the preview decodes,
    the SAF adapter and the abandonment guard now live in `LibraryLoader`, and the Activity keeps
    view wiring and lifecycle. Settings-syncing is the remaining candidate, and the trigger stands —
    the next feature that adds a method here which is neither view wiring nor a one-line call into
@@ -326,9 +326,9 @@ Live findings, ordered by how much they cost. None is a blocker; each has a stat
    rather than the other way round; wiring the reset into the phase change is a one-line UX decision
    nobody has made.
 7. ~~**Image decoding runs on the main thread**~~ — closed on both sides. The player screen's half
-   went with [FD-010](prds/FD-010-pose-decode-off-the-tick.md) (the next pose is decoded during the
+   went with [#5](https://github.com/JeffreyMcKinley/FigureDrawing/issues/5) (the next pose is decoded during the
    current one), and the folder walk's half with
-   [FD-009](prds/FD-009-async-reference-library.md) (the walk and up to 24 preview decodes moved off
+   [#4](https://github.com/JeffreyMcKinley/FigureDrawing/issues/4) (the walk and up to 24 preview decodes moved off
    the UI thread). Grants are no longer accumulated either: picking a different folder releases the
    ones it supersedes and a restore re-takes the one in use (`INV-REF-4`).
 
@@ -337,7 +337,7 @@ Live findings, ordered by how much they cost. None is a blocker; each has a stat
    are recycled by the screen that decoded them, and the player screen no longer decodes on the UI
    thread at all — the next pose is decoded during the current one, the session's construction (and
    with it the first pose) happens off the thread too, and an unreadable file is loaded once per
-   session rather than once per pass (`INV-PLY-7`, `INV-PLY-8`, FD-010).
+   session rather than once per pass (`INV-PLY-7`, `INV-PLY-8`, #5).
 
    What is left there, stated precisely because "no longer decodes on the boundary" is easy to
    over-claim: a boundary that arrives mid-decode *waits* for the decode it already started, and a
@@ -360,7 +360,7 @@ goes:
   the real Core objects with no Android.
 - **Adapter conformance** (`IDocumentTree`, the bitmap loader) → in-memory fakes in unit tests. The
   Android implementations are covered by the contract tests for their view ids and strings, and —
-  since FD-009 — for the threading and ordering decisions a unit test cannot reach: which lifecycle
+  since #4 — for the threading and ordering decisions a unit test cannot reach: which lifecycle
   method abandons a load, and that the guard is read before anything is written.
 - **Nothing about the domain is tested through Appium.** A domain rule reachable only from a UI test
   is a rule in the wrong layer (§14).

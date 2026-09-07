@@ -207,7 +207,7 @@ the aggregate it protects is not an ACL.
   `LibraryReference` (§2.4) recognises a `content://` tree URI without ever constructing, resolving
   or querying one.
 - `INV-TREE-2` — **`GetChildren` returns direct children only.** Recursion is the library's job,
-  not the adapter's, so the adapter carries no domain logic — only the query and, since FD-009, the
+  not the adapter's, so the adapter carries no domain logic — only the query and, since #4, the
   abandonment check that stops it answering once its load is superseded (`INV-X-13`, pinned by
   `LibraryLoadContractTests`).
 - `INV-TREE-3` — **A `DocumentEntry` is `(DocumentId, MimeType?)` and nothing more.** A null or
@@ -640,7 +640,7 @@ invariant families has one test file per family rather than one per type.
 | `INV-STO-5` | `Settings.Save` (checkpoint) | `SettingsTests` kill + truncation cases, `FolderPickerUiTests.PickedFolder_SurvivesTheProcessBeingKilled` |
 | `INV-REF-*` | `LibraryReference`, wired by `MainActivity` | `LibraryReferenceTests`, `FolderMemoryContractTests`, `FolderPickerUiTests` |
 | Cross-context flows | The objects together | `SessionE2ETests` |
-| `INV-X-13` (an abandonable load) | `LoadGeneration` and `LibraryLoadState` (the "never a mixture" clause), called by `LibraryLoader` and `MainActivity` | `LoadGenerationTests` and `LibraryLoadStateTests` for the rules themselves; `LibraryLoadContractTests` for where they are called — not observable through Appium, see FD-009 |
+| `INV-X-13` (an abandonable load) | `LoadGeneration` and `LibraryLoadState` (the "never a mixture" clause), called by `LibraryLoader` and `MainActivity` | `LoadGenerationTests` and `LibraryLoadStateTests` for the rules themselves; `LibraryLoadContractTests` for where they are called — not observable through Appium, see #4 |
 | `INV-X-*` (the rest) | Structural | Project references, `AndroidBuildTests`, `SessionScreenContractTests`, `FolderMemoryContractTests`, `CrossActivityContractTests`, code review |
 | `INV-SET-P4`, `INV-STO-1` | Structural (Activity isolation) | `CrossActivityContractTests` (SessionActivity never touches Settings; the folder persistence chain contains no await) |
 
@@ -700,7 +700,7 @@ Changed again by the repo-wide review of 2026-08-16:
 | `INV-GRP-6` | **Narrowed** | It said randomization never belongs to the library. `INV-POOL-6` is one random choice made there — of membership, never of order |
 | `INV-IMG-4` | **Corrected** | It claimed decoded images were bounded to `MaxImageDimension`. The sampler bounded the *short* side, so an aspect-extreme source was effectively unbounded; the long side is now held to within 2x the ceiling |
 
-Changed by FD-011 and FD-010:
+Changed by #6 and #5:
 
 | Rule | Change | Why |
 |---|---|---|
@@ -712,11 +712,11 @@ Changed by FD-011 and FD-010:
 | `INV-SES-1` | **Exception stated** | "Commands only" now carries one named carve-out: `UpcomingImageId` may refill a drained pass in order to answer (`INV-PLY-7`). It changes nothing else, and a pass is materialised whole, so the sequence is identical either way |
 | `INV-X-12` | **Exception stated** | Same carve-out from the other side: a query that mutates was forbidden outright, and is now forbidden except where the mutation is stated as part of the query's own rule |
 
-Changed by FD-013:
+Changed by #8:
 
 | Rule | Change | Why |
 |---|---|---|
-| `INV-SET-P4` | **Tightened** | Save deferred past a successful load; a folder that fails to load is no longer persisted (FD-013) |
+| `INV-SET-P4` | **Tightened** | Save deferred past a successful load; a folder that fails to load is no longer persisted (#8) |
 
 One behaviour did change, deliberately: when the consecutive-failure budget is exhausted the session
 now banks **no** partial time for the unreadable image it died on. The old `SessionPlayer` routed

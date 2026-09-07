@@ -60,7 +60,7 @@ public class FolderMemoryContractTests
     }
 
     // The folder's identity is persisted, and persisted only after the load succeeds — a folder
-    // that fails to load must not be remembered (FD-013). The save is a named write moment
+    // that fails to load must not be remembered (#8). The save is a named write moment
     // (INV-SET-P4); an assignment without one is forgotten on exit.
     [Fact]
     public void PickingAFolder_PersistsItAsLastCollection()
@@ -70,9 +70,9 @@ public class FolderMemoryContractTests
         var assignment = Regex.Match(body, @"settings\.LastCollection\s*=");
         Assert.True(assignment.Success, "The picked folder is no longer written to Settings.LastCollection.");
 
-        // The folder is proved openable BEFORE it is written down. FD-013's rule was "save only
+        // The folder is proved openable BEFORE it is written down. #8's rule was "save only
         // after a successful load", enforced by putting LoadFolder between the assignment and the
-        // save. FD-009 made the load asynchronous, so LoadFolder returns before the walk lands and
+        // save. #4 made the load asynchronous, so LoadFolder returns before the walk lands and
         // that ordering would pass while guaranteeing nothing — the save has to be gated on
         // something that has actually happened by the time it runs.
         //
@@ -127,7 +127,7 @@ public class FolderMemoryContractTests
         Assert.Contains("PersistedUriPermissions", MethodBody("PersistedGrants"), StringComparison.Ordinal);
 
         // Enumerating the platform's grants is a binder call into the system server, and since
-        // FD-009 the restore runs on every return to the screen rather than once per launch — so an
+        // #4 the restore runs on every return to the screen rather than once per launch — so an
         // escape here would be a crash on every foreground, off a reference that is persisted
         // (INV-X-11, INV-GRP-5). The grant check has to sit inside the try that reports it.
         var restore = MethodBody("RestoreLastFolder");
@@ -144,7 +144,7 @@ public class FolderMemoryContractTests
     // provider uninstalled) must leave the empty state showing, not throw on every launch from then
     // on — the stale uri is persisted, so an escape here reproduces forever (INV-GRP-5).
     //
-    // Since FD-009 this catch covers only LoadFolder's synchronous prologue: the walk itself fails
+    // Since #4 this catch covers only LoadFolder's synchronous prologue: the walk itself fails
     // on the looper, inside LoadFolderAsync. The asynchronous half of this invariant is pinned by
     // LibraryLoadContractTests.TheLoadsTail_CatchesItsOwnFailures.
     [Fact]
@@ -283,10 +283,10 @@ public class FolderMemoryContractTests
         Assert.Matches(@"if\s*\(\s*LastPickedDocumentUri\(\)\s*(is|!=)", body[..attached]);
     }
 
-    // FD-013 prevention (INV-SET-P4): the assignment-then-save in OnActivityResult must be
+    // #8 prevention (INV-SET-P4): the assignment-then-save in OnActivityResult must be
     // synchronous. An await between `settings.LastCollection =` and `settings.Save()` turns a durable
     // write into a WAL-only entry that a process kill silently reverts — the exact regression path
-    // FD-013 exposed.
+    // #8 exposed.
     [Fact]
     public void ThePersistenceChain_InOnActivityResult_IsSynchronous()
     {
@@ -296,7 +296,7 @@ public class FolderMemoryContractTests
         Assert.DoesNotContain("Task.Run", body, StringComparison.Ordinal);
     }
 
-    // FD-013 (INV-SET-P4): a folder that fails to load must not be remembered. The catch block
+    // #8 (INV-SET-P4): a folder that fails to load must not be remembered. The catch block
     // reverts the in-memory LastCollection so the OnPause backstop does not persist a broken URI —
     // without this, every relaunch would restore into an error state.
     [Fact]

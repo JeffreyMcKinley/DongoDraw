@@ -340,7 +340,7 @@ public sealed class SettingsTests : IDisposable
         Assert.Equal(30, reopened.PoseDurationSeconds);
     }
 
-    // FD-013 prevention: documents the concurrency contract. Settings is single-threaded by design
+    // #8 prevention: documents the concurrency contract. Settings is single-threaded by design
     // (INV-SET-P4 names the write moments, and they are all on the main thread). This test does not
     // make Settings thread-safe — it records what happens when two threads write at once. If LiteDB
     // throws or corrupts, the test documents that fact for anyone touching the threading architecture

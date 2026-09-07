@@ -1,10 +1,12 @@
-# FD-0NN — <Feature name>
+# <Feature name>
+
+<!-- This H1 becomes the tracking issue's title and is not part of the body. -->
 
 > Multi-ticket feature. Child tickets carry the acceptance criteria; this document carries the
 > shape. Use [ticket-template.md](ticket-template.md) for each child.
 
-**Status:** draft
-**Child tickets:** FD-0NN, FD-0NN+1, …
+**Child tickets:** #N, #N+1, … (filled in once the children are filed; the state is the issue's
+triage label, not a line here)
 
 ## 1. Problem
 
@@ -42,7 +44,7 @@ properties, changes to the pool's shape. Each one is a change at both ends in a 
 
 Numbered, each mapping to one child ticket.
 
-### 4.1 <Story name> → FD-0NN
+### 4.1 <Story name> → #N
 
 ```
 As an artist,
@@ -86,7 +88,7 @@ No analytics. Nothing here may depend on data the app does not already have on d
 
 **In scope**
 
-- <capability> → FD-0NN
+- <capability> → #N
 
 **Out of scope**
 
@@ -111,4 +113,4 @@ extra size, main-thread decode, unrecycled bitmaps, process death, SAF grant exp
 
 ## 11. Sequencing
 
-FD-0NN → FD-0NN+1 → …, and what each one leaves the app able to do on its own.
+#N → #N+1 → …, and what each one leaves the app able to do on its own.

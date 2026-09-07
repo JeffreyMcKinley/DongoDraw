@@ -1,7 +1,7 @@
 namespace FigureDrawing.Tests;
 
-// FD-013 prevention: structural guards on the boundary between the two Activities. The folder memory
-// regression (FD-013) could be caused by an indirect lifecycle interaction between SessionActivity's
+// #8 prevention: structural guards on the boundary between the two Activities. The folder memory
+// regression (#8) could be caused by an indirect lifecycle interaction between SessionActivity's
 // async session build and MainActivity's persistence chain — even when neither Activity's code
 // directly touches the other's state. These tests pin the isolation properties that prevent the
 // class of change that could produce such a regression.
@@ -55,11 +55,11 @@ public sealed class CrossActivityContractTests
     // The folder persistence chain — validate → assign → save — must be synchronous end to end
     // (INV-SET-P4). An `await` inside it introduces a point where the continuation may not run
     // before the process dies: the artist swipes the app, the system reclaims it, and the Save never
-    // fires. That is what FD-013 showed cannot exist on the persistence side.
+    // fires. That is what #8 showed cannot exist on the persistence side.
     //
     // Originally this banned `async` anywhere in MainActivity, and named the two ways out if a
     // feature ever needed it: move it to Core, or restructure the chain to save synchronously before
-    // the await. FD-009 needed it — the SAF walk and the preview decodes cannot leave the Android
+    // the await. #4 needed it — the SAF walk and the preview decodes cannot leave the Android
     // layer, and they were freezing launch — and took the second way out. The screen is async now;
     // the persistence chain still is not, and that is the property worth pinning. The chain's own
     // ordering is asserted in FolderMemoryContractTests.PickingAFolder_PersistsItAsLastCollection.
@@ -75,7 +75,7 @@ public sealed class CrossActivityContractTests
 
     // Async is confined to the library load. Anything else in this screen that starts awaiting is
     // either persistence-adjacent or a rule that belongs in Core, and both want the conversation
-    // FD-013 asked for rather than a quiet second continuation.
+    // #8 asked for rather than a quiet second continuation.
     [Fact]
     public void OnlyTheLibraryLoad_IsAsynchronous()
     {

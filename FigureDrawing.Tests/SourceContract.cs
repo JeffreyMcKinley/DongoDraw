@@ -124,7 +124,7 @@ internal sealed class SourceContract
 
     // The index of the first occurrence of a snippet within a body, asserted to exist. Used to
     // state orderings — "the guard is read before the field is written" — which is what most of
-    // FD-009's threading contract comes down to.
+    // #4's threading contract comes down to.
     public static int IndexOf(string body, string snippet, string because)
     {
         var at = body.IndexOf(snippet, StringComparison.Ordinal);

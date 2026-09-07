@@ -1,6 +1,6 @@
 ---
 name: prd-generator
-description: Write a requirements doc for a FigureDrawing feature — an FD ticket in docs/prds, or a longer PRD for a multi-ticket feature. Use when the user asks to "create a PRD", "write requirements", "spec this feature", "write a ticket", or "document a feature" before implementation. Produces docs that use the repo's ubiquitous language, place the work in a bounded context, split it across Core/Android, and name its test tier.
+description: Write a requirements doc for a FigureDrawing feature — a ticket filed as a GitHub issue, or a longer PRD for a multi-ticket feature. Use when the user asks to "create a PRD", "write requirements", "spec this feature", "write a ticket", or "document a feature" before implementation. Produces docs that use the repo's ubiquitous language, place the work in a bounded context, split it across Core/Android, and name its test tier.
 ---
 
 # PRD Generator — FigureDrawing
@@ -21,19 +21,20 @@ them is wrong, not visionary.
 
 | User asks for | Write | Where |
 |---|---|---|
-| one story, fits one implementation pass | **FD ticket** | `docs/prds/FD-0NN-<slug>.md` |
-| a feature spanning several tickets | **Feature PRD** + child ticket stubs | `docs/prds/FD-0NN-<slug>.md` (PRD) + one file per child |
-| "quick spec", "one-pager", exploration | **One-pager** — problem, approach, acceptance criteria only | scratchpad, or `docs/prds/` if it will be built |
-| a rework of existing behaviour | **FD ticket** citing the invariants it changes | `docs/prds/` |
+| one story, fits one implementation pass | **Ticket** | one GitHub issue |
+| a feature spanning several tickets | **Feature PRD** + child tickets | one tracking issue with a task list + one issue per child |
+| "quick spec", "one-pager", exploration | **One-pager** — problem, approach, acceptance criteria only | scratchpad, or an issue if it will be built |
+| a rework of existing behaviour | **Ticket** citing the invariants it changes | one GitHub issue |
 
-Default to the FD ticket. It is the format the repo already uses
-(see [the index](../../../docs/prds/README.md); FD-009 is the worked example) and it is smaller than a PRD for a reason.
+Default to the single ticket. It is the format the repo already uses (`gh issue view 4` is the
+worked example) and it is smaller than a PRD for a reason.
 
-Ticket ID = highest existing `FD-0NN` + 1. Never reuse or renumber.
+The ticket id is the issue number GitHub assigns — do not invent one. See
+[docs/agents/issue-tracker.md](../../../docs/agents/issue-tracker.md) for the `gh` conventions.
 
 ## 2. Gather context
 
-Ask only what you cannot infer from the repo. Read `README.md`, `docs/prds/README.md`, and
+Ask only what you cannot infer from the repo. Read `README.md`, `gh issue list --state all`, and
 the relevant Core type first — half these answers are already written down.
 
 **Discovery questions:**
@@ -154,8 +155,8 @@ what is deferred to a later FD ticket.
 **Risks** — pull from the known costs in
 [ARCHITECTURE.md §20](../../../docs/ARCHITECTURE.md) when the change goes near them:
 
-- decoding still runs on the main thread in the repaint loop at a pose boundary (FD-010); the folder
-  walk's half of this shipped in FD-009. A PRD that introduces background work must follow the shape
+- decoding still runs on the main thread in the repaint loop at a pose boundary (#5); the folder
+  walk's half of this shipped in #4. A PRD that introduces background work must follow the shape
   in [ARCHITECTURE.md §7](../../../docs/ARCHITECTURE.md#7-threading) rather than inventing one, and
   must say where its work is abandoned and why
 - the pool crossing to the player is bounded by `ReferenceLibrary.Sample` (`INV-POOL-6`), so a
@@ -185,17 +186,25 @@ a decision that will be made accidentally during implementation.
 
 ## 9. Ship it
 
-1. Write the file at `docs/prds/FD-0NN-<slug>.md` using
+1. Write the body to a scratchpad file using
    [references/ticket-template.md](references/ticket-template.md), or
-   [references/prd-template.md](references/prd-template.md) for a multi-ticket feature.
-2. Add the row to the table in `docs/prds/README.md`, and to the suggested order if it has
-   dependencies.
-3. Do **not** start implementing. The PRD is the deliverable; wait for the go-ahead.
+   [references/prd-template.md](references/prd-template.md) for a multi-ticket feature. The H1 is
+   the issue title and is not part of the body. Links in the body must be absolute
+   (`https://github.com/JeffreyMcKinley/FigureDrawing/blob/master/docs/...`) — GitHub does not
+   resolve relative paths in issue bodies.
+2. File it: `gh issue create --title "<title>" --body-file <path> --label <state> --label <context>`.
+   The state label is one of the five roles in
+   [docs/agents/triage-labels.md](../../../docs/agents/triage-labels.md); the `context:*` label
+   names the bounded context. For a multi-ticket feature, create the children first, then edit the
+   tracking issue to hold a task list of their real numbers.
+3. Report the issue number back to the user. Dependencies go in the body as `#N`, not a
+   suggested-order table.
+4. Do **not** start implementing. The ticket is the deliverable; wait for the go-ahead.
 
 ## Notes
 
 - Anti-patterns for PRDs here mirror the code ones: a requirement that only an Activity could
   satisfy, a rule stated in terms of a widget, a persisted flag that duplicates `SessionConfig`,
   a story that needs a network call.
-- The committed tickets (FD-009, FD-010, FD-011) are the reference for tone and length. Match them; they are
+- The migrated tickets (#4, #5, #6) are the reference for tone and length. Match them; they are
   short on purpose.

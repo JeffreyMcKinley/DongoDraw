@@ -85,7 +85,7 @@ not an optimization:
 
 - Folder enumeration is the app's real I/O: a depth-first `ContentResolver.Query` per directory,
   with a `Cursor` closed in a `finally`. Watch for a query per *file*, an unclosed cursor, or a
-  re-walk triggered more often than once per foreground (since FD-009 the walk deliberately re-runs
+  re-walk triggered more often than once per foreground (since #4 the walk deliberately re-runs
   on every `OnStart` — see ARCHITECTURE.md §8)
 - Group membership is re-derived rather than cached, by design (`INV-GRP-1`). Propose memoizing it
   only within a single load, never as persisted state

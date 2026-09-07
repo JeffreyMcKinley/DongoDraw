@@ -348,7 +348,7 @@ public class SessionScreenContractTests
         Assert.Contains("return null;", decode);
     }
 
-    // --- Decoding the next pose ahead of the boundary (FD-010) ---------------
+    // --- Decoding the next pose ahead of the boundary (#5) ---------------
 
     // A decode running when the screen goes away cannot be stopped, so every way out has to make
     // sure its result is thrown away rather than cached — otherwise this trades a stalled repaint

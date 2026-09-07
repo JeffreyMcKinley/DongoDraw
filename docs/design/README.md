@@ -131,7 +131,7 @@ a design change, not a mechanical sync — that diff *is* the design review.
 - **`rail_width` genuinely disagrees.** The design draws the rail at 288px, the app at 328dp. The
   app is probably right (four tool chips keep their labels in one row); the design should follow.
 - **`pendingFromDesign` has four entries** — decisions the design has made that the app has not
-  built. Two have tickets (FD-014, FD-015, both `ready-for-agent`); Blur and zoom have none.
+  built. Two have tickets (#9, #10, both `ready-for-agent`); Blur and zoom have none.
 - **Copy is not guarded.** The setup screen's labels exist twice — `Seconds per image`,
   `Number of images` and `Break between poses` are in the design, and `seconds_label_text` /
   `count_label_text` in `Resources/values/strings.xml`. Nothing asserts they agree, so a reworded

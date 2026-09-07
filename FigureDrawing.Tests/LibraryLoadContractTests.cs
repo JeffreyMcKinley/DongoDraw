@@ -1,6 +1,6 @@
 namespace FigureDrawing.Tests;
 
-// Contract tests for FD-009: the reference library loads off the UI thread, and a load that has
+// Contract tests for #4: the reference library loads off the UI thread, and a load that has
 // been superseded writes nothing (INV-X-13, "a library load is abandonable").
 //
 // A separate file from FolderMemoryContractTests because it is a separate invariant family
@@ -512,7 +512,7 @@ public class LibraryLoadContractTests
     {
         // The handling itself is master's and is tested in FolderMemoryContractTests: a reference
         // that no longer parses keeps the first-run prompt, and a grant that has gone shows the
-        // remembered-but-unreachable state. What FD-009 adds is a second caller — OnStart now
+        // remembered-but-unreachable state. What #4 adds is a second caller — OnStart now
         // rebuilds a grid OnStop released, so a folder that went away while the screen was stopped
         // has to reach that same handling instead of leaving a stale count over a dead pool.
         Assert.Contains("RestoreLastFolder(", Activity.MethodBody("OnStart"), StringComparison.Ordinal);

@@ -17,7 +17,7 @@ Unless the caller names specific files, review the changed code (`git diff`, `gi
 - `AGENTS.md`, `CLAUDE.md` — agent-facing instructions
 - `docs/ARCHITECTURE.md` — physical layering (§1–14) and domain architecture (§15–21)
 - `docs/DOMAIN-MODEL.md` — per-object rules and numbered invariants
-- `docs/prds/` — requirements docs for planned work, with acceptance criteria
+- GitHub Issues (`gh issue list`) — requirements docs for planned work, with acceptance criteria
 - `.claude/agents/*.md` — the reviewer agents' own architecture rules
 - XML doc comments and the in-file comments on Core types, which carry the *why* behind each rule
 
@@ -58,7 +58,7 @@ What makes them wrong:
 - Ensure `<returns>` accurately describes what the code returns
 - Validate that documented examples work against the current implementation
 - Confirm edge cases and thrown exceptions are documented (`<exception>`)
-- Flag stale comments referencing removed or renamed functionality — including ticket ids (`FD-00x`)
+- Flag stale comments referencing removed or renamed functionality — including issue references (`#14`)
   attached to code whose behaviour has since moved
 - Core types are commented densely and deliberately: the comments record *why* a rule exists and
   which open question it settled. A change that alters the rule but leaves the rationale is a

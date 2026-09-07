@@ -47,13 +47,14 @@ rules below are the workflow around it, not a second policy.
 
 ### Issue tracker
 
-Issues are markdown files: `docs/prds/FD-0NN-<slug>.md`, indexed in `docs/prds/README.md`. The `gh`
-CLI is installed and `origin` is a GitHub remote, but issues still live in `docs/prds/` — do not
-open GitHub Issues. See [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md).
+GitHub Issues on `JeffreyMcKinley/FigureDrawing`, driven with the `gh` CLI. The issue number is the
+ticket id — cite work as `#14`. The old `docs/prds/FD-0NN-*.md` files were migrated into issues and
+deleted. See [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md).
 
 ### Triage labels
 
-The five canonical roles plus a local `shipped`, carried on a `Status:` line in each ticket. See
+The five canonical roles as real GitHub labels, plus an orthogonal `context:*` label per bounded
+context. Shipped work is a closed issue, not a label. See
 [`docs/agents/triage-labels.md`](docs/agents/triage-labels.md).
 
 ### Domain docs

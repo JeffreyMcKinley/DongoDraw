@@ -2,9 +2,9 @@
 
 How this codebase is organized and the rules changes must hold to. Written for agents and
 contributors reviewing or extending the app. Product scope lives in the root [README](../README.md);
-planned work lives in [docs/prds](prds/README.md).
+planned work lives in [GitHub Issues](https://github.com/JeffreyMcKinley/FigureDrawing/issues).
 
-> Derived from the code as of FD-009. Where a rule below is marked **(confirm)** it was inferred
+> Derived from the code as of #4. Where a rule below is marked **(confirm)** it was inferred
 > from existing code rather than stated anywhere — correct it if the intent differs.
 
 ## 1. The one rule

@@ -29,8 +29,7 @@ term or a decision actually gets resolved.
 ├── docs/
 │   ├── ARCHITECTURE.md        ← §15 ubiquitous language, §16 bounded contexts
 │   ├── DOMAIN-MODEL.md        ← object cards + INV-<family>-<n> invariants
-│   ├── adr/                   ← not created yet
-│   └── prds/                  ← the issue tracker (see issue-tracker.md)
+│   └── adr/                   ← not created yet
 ├── FigureDrawing.Core/        ← all logic writable without Android
 └── FigureDrawing.Tests/
 ```

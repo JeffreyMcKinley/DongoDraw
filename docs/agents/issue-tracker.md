@@ -1,57 +1,80 @@
-# Issue tracker: Local Markdown (`docs/prds/`)
+# Issue tracker: GitHub
 
-Issues and specs for this repo live as markdown files in `docs/prds/`, indexed by
-[`docs/prds/README.md`](../prds/README.md). The `gh` CLI is installed and `origin` points at
-`github.com/JeffreyMcKinley/FigureDrawing`, so `gh pr` / `gh release` work — but there is no GitHub
-Issues workflow. Never file, read or close a ticket with `gh issue`; the markdown files are the
-tracker.
+Issues and specs for this repo live as GitHub issues on
+[`JeffreyMcKinley/FigureDrawing`](https://github.com/JeffreyMcKinley/FigureDrawing/issues). Use the
+`gh` CLI for all operations. The repo is private; issues are visible to collaborators only.
 
 ## Conventions
 
-- **One file per unit of work**: `docs/prds/FD-0NN-<slug>.md`. A multi-ticket feature is a longer
-  PRD in the same folder, with one FD id per shippable ticket.
-- **Ids are continuous** from FD-001 and permanent. Never reuse, never renumber. The next id is one
-  past the highest that appears anywhere in `docs/prds/`, shipped ids included.
-- **Register the ticket**: every new file also gets a row in the `## Open` table of
-  `docs/prds/README.md` (id, title, bounded context). Closing it moves the row to `## Shipped`.
-- **Write it with the `prd-generator` skill** — templates live in
-  `.claude/skills/prd-generator/references/`. Its output already uses the repo's ubiquitous
-  language, places the work in a bounded context, splits it across Core/Android, and names its
-  test tier.
-- **Ground truth wins**: a PRD that contradicts [ARCHITECTURE.md](../ARCHITECTURE.md) or
-  [DOMAIN-MODEL.md](../DOMAIN-MODEL.md) is wrong, not visionary. Acceptance criteria cite invariant
-  ids (`INV-<family>-<n>`) rather than restating rules in new words.
-- **Triage state** is a `Status:` line near the top of the file, holding one of the role strings in
-  [triage-labels.md](triage-labels.md). A ticket with no `Status:` line counts as `needs-triage`.
-- **Comments and conversation history** append to the bottom under a `## Comments` heading, newest
-  last, each entry dated.
+- **Create an issue**: `gh issue create --title "..." --body-file <path>`. Use `--body-file` rather
+  than an inline `--body` — ticket bodies run to a hundred lines and must not go through shell
+  argument quoting.
+- **Read an issue**: `gh issue view <number> --comments`.
+- **List issues**: `gh issue list --state open --json number,title,body,labels,comments --jq '[.[] | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]'` with appropriate `--label` and `--state` filters.
+- **Comment on an issue**: `gh issue comment <number> --body "..."`
+- **Apply / remove labels**: `gh issue edit <number> --add-label "..."` / `--remove-label "..."`
+- **Close**: `gh issue close <number> --comment "..."`
+
+Infer the repo from `git remote -v` — `gh` does this automatically when run inside a clone.
+
+## Ticket identity
+
+The issue number **is** the id. There is no separate ticket id, no index file to keep in sync, and
+nothing to renumber. Cite work as `#14`, in commit messages, code comments and docs alike.
+
+Bodies are written with the `prd-generator` skill, against
+[ARCHITECTURE.md](../ARCHITECTURE.md) and [DOMAIN-MODEL.md](../DOMAIN-MODEL.md) — a spec that
+contradicts them is wrong, not visionary. Acceptance criteria cite invariant ids
+(`INV-<family>-<n>`) rather than restating rules in new words.
+
+Links inside an issue body must be **absolute** —
+`https://github.com/JeffreyMcKinley/FigureDrawing/blob/master/docs/...`. GitHub does not resolve
+relative paths in issue bodies.
+
+## Labels
+
+Two axes, both required on a new issue:
+
+- **Triage state** — one of the five roles in [triage-labels.md](triage-labels.md). An issue with
+  no state label counts as `needs-triage`.
+- **Bounded context** — `context:reference-library`, `context:session-setup`,
+  `context:session-execution`, `context:preferences`, `context:rendering`, or `context:repo` for
+  build/test/enforcement work that belongs to no single context. More than one is allowed where the
+  work genuinely spans contexts.
+
+Shipped work is a **closed issue**, not a label.
+
+`gh issue create --label <missing>` fails outright rather than creating the label. Check with
+`gh label list` before inventing a new one.
+
+## Pull requests as a triage surface
+
+**PRs as a request surface: no.** _(Set to `yes` if this repo treats external PRs as feature
+requests; `/triage` reads this flag.)_
+
+GitHub shares one number space across issues and PRs, so a bare `#3` may be either — resolve with
+`gh pr view 3` and fall back to `gh issue view 3`. In this repo `#1`–`#3` are pull requests and
+issues begin at `#4`.
 
 ## When a skill says "publish to the issue tracker"
 
-Create `docs/prds/FD-0NN-<slug>.md` and add its row to the `## Open` table in
-`docs/prds/README.md`. Both, in one change — an unregistered file is invisible to everything that
-reads the index.
+Create a GitHub issue.
 
 ## When a skill says "fetch the relevant ticket"
 
-Read `docs/prds/FD-0NN-*.md`. The user normally passes the id (`FD-010`) or the path directly; an
-id alone resolves by glob against `docs/prds/`.
+Run `gh issue view <number> --comments`.
+
+## History
+
+Until September 2026 tickets were markdown files under `docs/prds/`, ids FD-001 to FD-028. The
+files were migrated into issues and deleted; the mapping is `FD-0NN` → `#(NN - 5)`, so the ticket
+numbered 009 is `#4` and 028 is `#23`. FD-001 to FD-008 are the MVP stories, which never had files — their
+acceptance criteria are the invariant tables in [DOMAIN-MODEL.md](../DOMAIN-MODEL.md) and the
+suites named in [ARCHITECTURE.md §11](../ARCHITECTURE.md#11-testing-strategy). Those eight ids
+survive in code comments as provenance and resolve to no issue.
 
 ## Wayfinding operations
 
-Used by `/wayfinder`. Exploration is not requirements — keep unresolved fog out of `docs/prds/`,
-which is the committed record of planned work.
-
-- **Map**: `.scratch/<effort>/map.md` — the Notes / Decisions-so-far / Fog body.
-- **Child ticket**: `.scratch/<effort>/issues/NN-<slug>.md`, numbered from `01`. A `Type:` line
-  records the ticket type (`research`/`prototype`/`grilling`/`task`); a `Status:` line records
-  `claimed`/`resolved`.
-- **Blocking**: a `Blocked by: NN, NN` line near the top. Unblocked when every file it lists is
-  `resolved`.
-- **Frontier**: scan `.scratch/<effort>/issues/` for files that are open, unblocked, and unclaimed;
-  lowest number wins.
-- **Claim**: set `Status: claimed` and save before any work.
-- **Resolve**: append the answer under an `## Answer` heading, set `Status: resolved`, then append a
-  pointer to the map's Decisions-so-far.
-- **Graduating**: when an effort resolves into work worth building, write it up as an FD ticket in
-  `docs/prds/` and link back to the map. `.scratch/` is scratch and is not the deliverable.
+`/wayfinder` is not installed in this repo. If it is added, its `wayfinder:map` and
+`wayfinder:<type>` labels do not exist yet and must be created with `gh label create` before the
+first run — `gh issue create --label <missing>` fails rather than creating them.

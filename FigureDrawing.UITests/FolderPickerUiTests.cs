@@ -100,7 +100,7 @@ public class FolderPickerUiTests(AppiumAppFixture app, ITestOutputHelper output)
 
         AssertAppAlive(g);
 
-        // A wait, not a point read: the folder is walked off the UI thread since FD-009, and the
+        // A wait, not a point read: the folder is walked off the UI thread since #4, and the
         // same label carries the loading caption until that finishes.
         Assert.True(
             g.WaitForEmptyFolderMessage(TimeSpan.FromSeconds(15)),
@@ -153,7 +153,7 @@ public class FolderPickerUiTests(AppiumAppFixture app, ITestOutputHelper output)
         AssertAppAlive(g);
 
         // The restore is off the UI thread now, so it is not necessarily finished by the time the
-        // tab is clickable — which is the whole point of FD-009 and why this waits.
+        // tab is clickable — which is the whole point of #4 and why this waits.
         Assert.True(
             g.WaitForLibraryCount(7, TimeSpan.FromSeconds(15)),
             $"Restored library reported {g.LibraryCount()} images, expected 7.");
@@ -249,7 +249,7 @@ public class FolderPickerUiTests(AppiumAppFixture app, ITestOutputHelper output)
         Assert.True(inside, $"Picker did not open inside '{folder}' — {listing}.");
     }
 
-    // FD-009: the grid is released in OnStop and rebuilt in OnStart, so the player's decodes are not
+    // #4: the grid is released in OnStop and rebuilt in OnStart, so the player's decodes are not
     // stacked on top of the library's 24 previews. The risk that buys is the one asserted here — get
     // the rebuild wrong and every return from a session shows an empty grid, which is worse than the
     // resident memory it fixes.

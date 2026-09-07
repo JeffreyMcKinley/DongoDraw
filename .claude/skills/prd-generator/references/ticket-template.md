@@ -1,7 +1,9 @@
-# FD-0NN — <Title in the repo's vocabulary>
+# <Title in the repo's vocabulary>
+
+<!-- This H1 becomes the issue title and is not part of the body. -->
 
 **Story:** _<one sentence from the artist's point of view, in §15 terms>_
-**Depends on:** FD-00X, FD-00Y (or `none`)
+**Depends on:** #N, #M (or `none`)
 
 ## Summary
 
@@ -46,7 +48,7 @@ rule that makes it true.
 ## Out of scope
 
 - <explicitly excluded>
-- <deferred to FD-0NN>
+- <deferred to a follow-up issue>
 
 ## Risks
 

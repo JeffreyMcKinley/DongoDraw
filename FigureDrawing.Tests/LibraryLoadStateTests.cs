@@ -2,7 +2,7 @@ using FigureDrawing.Core;
 
 namespace FigureDrawing.Tests;
 
-// When a re-walk may keep the pool the screen is showing (FD-009). Executable rather than pinned by
+// When a re-walk may keep the pool the screen is showing (#4). Executable rather than pinned by
 // source shape: inverted, Start stays armed over another folder's pool and every contract assertion
 // about this comparison still passes.
 public class LibraryLoadStateTests
