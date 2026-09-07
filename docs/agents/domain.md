@@ -5,10 +5,11 @@ codebase. This is a **single-context** repo — one glossary, one object model, 
 
 ## Before exploring, read these
 
-- **[`docs/ARCHITECTURE.md`](../ARCHITECTURE.md)** — the standing brief. §15 is the ubiquitous
-  language (the glossary); §16 lists the bounded contexts. It also fixes the Core/Android split, the
-  rules for crossing that boundary, threading and lifecycle requirements, the four-tier testing
-  strategy, and the anti-patterns that count as violations.
+- **[`docs/ARCHITECTURE.md`](../ARCHITECTURE.md)** — the standing brief, §1–14. It fixes the
+  Core/Android split, the rules for crossing that boundary, threading and lifecycle requirements,
+  the four-tier testing strategy, and the anti-patterns that count as violations.
+- **[`docs/DDD-ARCHITECTURE.md`](../DDD-ARCHITECTURE.md)** — the domain half, §15–21. §15 is the
+  ubiquitous language (the glossary); §16 lists the bounded contexts.
 - **[`docs/DOMAIN-MODEL.md`](../DOMAIN-MODEL.md)** — one card per object: what identifies it, how
   long it lives, what it guarantees, what it may do, what it must never do. Rules are numbered
   invariants (`INV-<family>-<n>`) and the ids are stable across refactors.
@@ -27,7 +28,8 @@ term or a decision actually gets resolved.
 /
 ├── CLAUDE.md                  ← entry point; points here
 ├── docs/
-│   ├── ARCHITECTURE.md        ← §15 ubiquitous language, §16 bounded contexts
+│   ├── ARCHITECTURE.md        ← §1-14 physical architecture
+│   ├── DDD-ARCHITECTURE.md    ← §15 ubiquitous language, §16 bounded contexts
 │   ├── DOMAIN-MODEL.md        ← object cards + INV-<family>-<n> invariants
 │   └── adr/                   ← not created yet
 ├── FigureDrawing.Core/        ← all logic writable without Android
@@ -37,7 +39,7 @@ term or a decision actually gets resolved.
 ## Use the glossary's vocabulary
 
 When your output names a domain concept — an issue title, a refactor proposal, a hypothesis, a test
-name, a type name — use the term as ARCHITECTURE.md §15 defines it. Don't drift to synonyms the
+name, a type name — use the term as DDD-ARCHITECTURE.md §15 defines it. Don't drift to synonyms the
 glossary avoids.
 
 If the concept you need isn't in the glossary, that's a signal: either you're inventing language the
