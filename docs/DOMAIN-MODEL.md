@@ -116,12 +116,17 @@ has no state to keep between them.
 | **Kind** | Aggregate root over its images |
 | **Lifetime** | Persisted by reference (`Settings.LastCollection`), never by contents |
 | **State** | Root document id, display name, and the enumerated image ids in encounter order |
-| **Operations** | the constructor (which *is* the walk — re-deriving membership means a new instance, never a second walk on a live one, `INV-X-13`), `Pool` (the ordered ids), `Sample(maxIds[, maxTotalIdLength], random)` (the bounded handoff, `INV-POOL-6`), `Count` / `IsEmpty`, `RootDocumentId` / `DisplayName`, the static `Empty` (no folder picked yet — every screen's starting state) and the static classifiers `IsImage` / `IsDirectory` |
+| **Operations** | the constructor (which *is* the walk — re-deriving membership means a new instance, never a second walk on a live one, `INV-X-13`), `Pool` (the ordered ids), `Sample(maxIds[, maxTotalIdLength], random)` (the bounded handoff, `INV-POOL-6`), `Count` / `IsEmpty`, `RootDocumentId` / `DisplayName`, the static `Empty` (no folder picked yet — every screen's starting state, a fresh instance per
+access rather than process-wide state two screens could come to share, `INV-X-3`) and the static
+classifiers `IsImage` / `IsDirectory` |
 
 **Mapping ids at the edge.** The constructor takes an optional `toImageId` so the adapter can turn
 each document id into the durable content URI a session draws from — the Android layer passes
 `DocumentsContract.BuildDocumentUriUsingTree`, tests pass nothing and keep using `"a"`, `"b"`,
 `"c"`. That is what makes `Pool` *the* session pool rather than a list the screen has to re-map.
+A document id the mapper rejects (returns `null`) or cannot map (throws, which the provider can
+cause by reporting a row from outside the tree) is dropped from the pool. One bad row never aborts
+the walk (`INV-X-11`).
 
 **No `IsAvailable` on the aggregate.** The library is its contents, so "may I still read this
 folder" is a question about the *reference*, not about the pool. It is answered by
@@ -140,11 +145,11 @@ is why a revoked grant is no longer indistinguishable from an empty folder: it h
 - `INV-GRP-3` — **Enumeration terminates.** A provider that reports a document as its own
   descendant must not loop; visited document ids are tracked. The visited set alone is not enough:
   a provider that synthesizes a fresh id at every level never repeats one, so the walk is bounded
-  by depth as well (64 — deeper than any real photo library). The two guards answer different
-  attacks and neither subsumes the other. Depth matters more than a cycle would: the walk recurses,
-  so an unbounded one is a stack overflow, which kills the process rather than raising something
-  `INV-X-11` could catch. Stopping early yields a partial pool, which is an ordinary outcome
-  (`INV-GRP-4`).
+  by depth as well (64 below the root — deeper than any real photo library). The two guards answer
+  different attacks and neither subsumes the other. Depth matters more than a cycle would: the walk
+  recurses, so an unbounded one is a stack overflow, which kills the process rather than raising
+  something `INV-X-11` could catch. Stopping early yields a partial pool, which is legal for the
+  same reason an abandoned load's is (`INV-GRP-1`, `INV-X-13`).
 - `INV-GRP-4` — **It may be empty, and empty is not an error.** Zero images shows the empty state,
   blocks Start, and does not crash.
 - `INV-GRP-5` — **Access can expire, the choice does not.** The library is only usable while its
@@ -174,10 +179,12 @@ is why a revoked grant is no longer indistinguishable from an empty folder: it h
   library hands over a uniform random sample in enumeration order, bounded by both a count and a
   total id length (`ReferenceLibrary.Sample`). A length bound is not a count bound in disguise — a
   document id carries the whole relative path, so a deep tree with long filenames runs several
-  hundred characters per id where a shallow one runs fifty. The first id is taken whenever the
-  count allows it, even when it alone exceeds the length bound, so one pathological id yields a
-  one-image pool rather than an empty one that cannot start a session (`INV-POOL-5`). This is the
-  one place the library chooses at random,
+  hundred characters per id where a shallow one runs fifty. Either bound at zero or below yields an
+  empty pool; past that the first id is taken whenever the count allows it, even when it alone
+  exceeds the length bound, so one pathological id yields a one-image pool rather than an empty one
+  that cannot start a session (`INV-POOL-5`). The count bound is the uniform one: where the length
+  bound binds it trims the tail of the already-ordered sample, so the ids that survive that trim
+  skew earlier in enumeration order. The count is the one place the library chooses at random,
   and it chooses membership, never order (`INV-GRP-6`). The library itself is never truncated —
   membership is still whatever the tree reports (`INV-GRP-1`, `INV-GRP-2`) — and the session draws
   from the sample as if it were the pool, so `INV-POOL-1`..`INV-POOL-4` hold unchanged on what it
@@ -737,6 +744,17 @@ Changed by #8:
 | Rule | Change | Why |
 |---|---|---|
 | `INV-SET-P4` | **Tightened** | Save deferred past a successful load; a folder that fails to load is no longer persisted (#8) |
+
+Changed by #12:
+
+| Rule | Change | Why |
+|---|---|---|
+| `INV-GRP-3` | **Widened** | It named only the visited set, which stops a provider reporting a cycle and nothing else. The depth ceiling is a second, non-subsuming guard against one that mints a fresh id per level. The rule shipped and was tested, but lived only in a `ReferenceLibrary.cs` comment |
+| `INV-POOL-6` | **Widened** | It described the length bound without the single-id case, and did not say that the bound trims the tail of an ordered sample rather than re-drawing it. Same provenance: enforced and tested, documented only in a comment |
+
+Neither is a change to behaviour. Both rules already shipped and were already covered by
+`ReferenceLibraryTests`; #12 deleted the comments that were their only record, so the record moved
+here first. Both belong to families that already have a §8 enforcement row, so §8 is unchanged.
 
 Changed by #13:
 
