@@ -258,7 +258,10 @@ is to hold the string, not to know what makes one usable (§5.1).
 
 - `INV-REF-1` — **A reference has a form.** Non-blank, within `MaxLength`, a `content://` scheme, and
   a `/tree/` segment carrying a non-empty document id under a real authority. Anything else is "no
-  folder remembered", never an error.
+  folder remembered", never an error. The length ceiling is not a guess at how long a folder name
+  gets — one authority plus one document id is already far inside it. It is there because this value
+  is read back from a file this app does not fully control and then handed to the system picker in a
+  Binder transaction, which is the same pressure that bounds the pool handoff (`INV-POOL-6`).
 - `INV-REF-2` — **One spelling.** Comparison is over a canonical form: lower-case scheme, upper-case
   percent-escapes, everything else byte-exact. The stored value and the platform's grant list are
   two round-trips through the same folder and do not always come back spelled identically; the
@@ -269,10 +272,16 @@ is to hold the string, not to know what makes one usable (§5.1).
 - `INV-REF-4` — **Superseded grants are handed back.** Picking a different folder releases the read
   grants held for folders that are no longer remembered; re-picking the same one releases nothing.
   A package's persisted grants are capped and the platform drops the *oldest*, so a grant kept for a
-  folder the artist has moved on from can cost them the one they still use.
+  folder the artist has moved on from can cost them the one they still use. A grant is handed back
+  in the platform's own spelling, not in the canonical form `INV-REF-2` compares over: canonicalising
+  is how two round-trips are recognised as one folder, but the string that *identifies* a grant to
+  the platform is the one the platform reported.
 - `INV-REF-5` — **Four states, four things to say.** `NeverPicked`, `Unavailable`, `Empty`, `Ready`.
   The screen maps them to messages; it does not decide them. Collapsing `Unavailable` into
-  `NeverPicked` is what makes a revoked permission read as "the app forgot my folder".
+  `NeverPicked` is what makes a revoked permission read as "the app forgot my folder". A listed
+  grant is not on its own enough to be readable: a walk that was attempted and threw leaves the
+  reference `Unavailable` too, because what the artist cannot open is unavailable whatever the
+  permission list still says.
 
 ---
 
@@ -746,6 +755,18 @@ Changed by #12:
 Neither is a change to behaviour. Both rules already shipped and were already covered by
 `ReferenceLibraryTests`; #12 deleted the comments that were their only record, so the record moved
 here first. Both belong to families that already have a §8 enforcement row, so §8 is unchanged.
+
+Changed by #13:
+
+| Rule | Change | Why |
+|---|---|---|
+| `INV-REF-1` | **Widened** | It named `MaxLength` without saying what the ceiling is for. The bound is a Binder-transaction bound, not a guess at folder-name length |
+| `INV-REF-4` | **Widened** | It said which grants are released and not in what spelling. A grant is handed back as the platform reported it, never canonicalised |
+| `INV-REF-5` | **Widened** | It named the four states without saying that a failed walk reaches `Unavailable` on its own, even while the grant is still listed |
+
+As with #12, none of this is a change to behaviour: all three shipped, all three are covered by
+`LibraryReferenceTests`, and all three were recorded only in the comments #13 deleted. The
+`INV-REF-*` family already has a §8 enforcement row, so §8 is unchanged.
 
 One behaviour did change, deliberately: when the consecutive-failure budget is exhausted the session
 now banks **no** partial time for the unreadable image it died on. The old `SessionPlayer` routed
