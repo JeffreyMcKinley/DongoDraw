@@ -2,7 +2,7 @@ namespace FigureDrawing.Core;
 
 public readonly record struct DocumentEntry(string DocumentId, string? MimeType);
 
-// Port over "list the direct children of a folder document" (INV-TREE-1).
+// The port for listing the direct children of a folder document (INV-TREE-1).
 public interface IDocumentTree
 {
     IEnumerable<DocumentEntry> GetChildren(string parentDocumentId);
