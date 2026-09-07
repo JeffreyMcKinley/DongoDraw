@@ -6,8 +6,8 @@ never do.
 
 Companion to [ARCHITECTURE.md](ARCHITECTURE.md) — that document says *where* code lives and which
 project may reference which; this one says *what the objects mean*. Vocabulary is defined once in
-[ARCHITECTURE.md §15](ARCHITECTURE.md#15-ubiquitous-language) and used here without redefinition.
-Bounded contexts are [§16](ARCHITECTURE.md#16-bounded-contexts).
+[DDD-ARCHITECTURE.md §15](DDD-ARCHITECTURE.md#15-ubiquitous-language) and used here without redefinition.
+Bounded contexts are [§16](DDD-ARCHITECTURE.md#16-bounded-contexts).
 
 ## How to read this
 
@@ -138,7 +138,13 @@ is why a revoked grant is no longer indistinguishable from an empty folder: it h
   merge into one pool in encounter order. Nesting is a storage detail, not a domain hierarchy. If
   per-subfolder grouping is ever wanted, that is *several* libraries, decided at pick time.
 - `INV-GRP-3` — **Enumeration terminates.** A provider that reports a document as its own
-  descendant must not loop; visited document ids are tracked.
+  descendant must not loop; visited document ids are tracked. The visited set alone is not enough:
+  a provider that synthesizes a fresh id at every level never repeats one, so the walk is bounded
+  by depth as well (64 — deeper than any real photo library). The two guards answer different
+  attacks and neither subsumes the other. Depth matters more than a cycle would: the walk recurses,
+  so an unbounded one is a stack overflow, which kills the process rather than raising something
+  `INV-X-11` could catch. Stopping early yields a partial pool, which is an ordinary outcome
+  (`INV-GRP-4`).
 - `INV-GRP-4` — **It may be empty, and empty is not an error.** Zero images shows the empty state,
   blocks Start, and does not crash.
 - `INV-GRP-5` — **Access can expire, the choice does not.** The library is only usable while its
@@ -166,7 +172,12 @@ is why a revoked grant is no longer indistinguishable from an empty folder: it h
 - `INV-POOL-6` — **A handoff may be bounded, and says so.** When the pool cannot cross a boundary
   whole (the player receives it as an intent extra, which has a hard size limit in bytes), the
   library hands over a uniform random sample in enumeration order, bounded by both a count and a
-  total id length (`ReferenceLibrary.Sample`). This is the one place the library chooses at random,
+  total id length (`ReferenceLibrary.Sample`). A length bound is not a count bound in disguise — a
+  document id carries the whole relative path, so a deep tree with long filenames runs several
+  hundred characters per id where a shallow one runs fifty. The first id is taken whenever the
+  count allows it, even when it alone exceeds the length bound, so one pathological id yields a
+  one-image pool rather than an empty one that cannot start a session (`INV-POOL-5`). This is the
+  one place the library chooses at random,
   and it chooses membership, never order (`INV-GRP-6`). The library itself is never truncated —
   membership is still whatever the tree reports (`INV-GRP-1`, `INV-GRP-2`) — and the session draws
   from the sample as if it were the pool, so `INV-POOL-1`..`INV-POOL-4` hold unchanged on what it
@@ -270,7 +281,7 @@ It also owns the two things derived purely from a configured session's shape: `E
 long the run takes) and `HandoffBound(imageCount, maxIds)` (how many reference ids that run needs in
 play, `INV-POOL-6`). The second lives here rather than on `ReferenceLibrary` because the library
 supplies the pool and must not have to know how long a session is — the dependency runs one way
-(ARCHITECTURE.md §16).
+(DDD-ARCHITECTURE.md §16).
 
 **Rules**
 
@@ -478,11 +489,11 @@ a pose lasts, and it survives independently of any pose.
   the screen reads the flags and renders. How an aid *looks* is therefore not held here either: the
   rule-of-thirds guides take their tone from the pose beneath them, and that decision lives in
   `GridContrast` — a supporting rendering service
-  ([ARCHITECTURE.md §16](ARCHITECTURE.md#16-bounded-contexts)), not in this entity and not in the
+  ([DDD-ARCHITECTURE.md §16](DDD-ARCHITECTURE.md#16-bounded-contexts)), not in this entity and not in the
   session. `ViewerTools.Grid` still answers the only question the domain asks: is the grid on.
 - `INV-VIEW-4` — **Every aid persists across poses within a session**, zoom included: nothing is
   reset when the image changes. `ResetZoom` exists for a screen that wants a per-pose reset, and the
-  player does not call it — see [ARCHITECTURE.md §20](ARCHITECTURE.md#20-where-the-code-deviates-today)
+  player does not call it — see [DDD-ARCHITECTURE.md §20](DDD-ARCHITECTURE.md#20-where-the-code-deviates-today)
   before changing that, because it is a behaviour decision, not an omission.
 
 ---
@@ -555,7 +566,7 @@ ad hoc.
 - Timestamps enter from outside the domain, through the injected clock, exactly like every other
   time value.
 - Its arrival is also the trigger for materializing domain events
-  ([ARCHITECTURE.md §18](ARCHITECTURE.md#18-domain-events)) — a second consumer is the whole reason
+  ([DDD-ARCHITECTURE.md §18](DDD-ARCHITECTURE.md#18-domain-events)) — a second consumer is the whole reason
   the events would exist.
 
 ---
@@ -725,7 +736,7 @@ against `INV-PLY-2`.
 
 | Merged object | Was | Is |
 |---|---|---|
-| `Pose` | `string` ids + session fields | Unchanged: still implicit. It gets a type when a second string-shaped concept enters the same signatures (the `ImageRef` candidate, [ARCHITECTURE.md §17](ARCHITECTURE.md#17-tactical-model)) |
+| `Pose` | `string` ids + session fields | Unchanged: still implicit. It gets a type when a second string-shaped concept enters the same signatures (the `ImageRef` candidate, [DDD-ARCHITECTURE.md §17](DDD-ARCHITECTURE.md#17-tactical-model)) |
 | `ReferenceLibrary` | `FolderImageEnumerator` (static) + the tree URI and a `List<string>` held loose in `MainActivity` | `ReferenceLibrary.cs`, holding root id, display name and pool, with `IDocumentTree` / `DocumentEntry` alongside it |
 | `DrawingSession<TImage>` | `PoseSession<TImage>` composing `DrawingSession` + `SessionPlayer<TImage>` + `PoseCountdown`, with `SessionSummary` as a projection | `Session/DrawingSession.cs`: one aggregate, the other four as private state and queries, plus the non-generic `DrawingSession.Format` |
 | `Settings` | `AppSettings` + `SettingsStore : IDisposable` | `Data/Settings.cs`: one type with `Open` / `Save` / `Dispose` |
