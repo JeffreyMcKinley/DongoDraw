@@ -745,6 +745,8 @@ invariant families has one test file per family rather than one per type.
 | `INV-CD-*` | `DrawingSession<TImage>` | `DrawingSessionCountdownTests` |
 | `INV-PLY-*` | `DrawingSession<TImage>` | `DrawingSessionImageTests` with a fake loader |
 | `INV-VIEW-*` | `ViewerTools` | `ViewerToolsTests` |
+| `INV-IMG-4` (the decode bound) | `BitmapMath.CalculateCropSampleSize`, called by `ImageDecoding` | `BitmapMathTests` for the arithmetic — the request floor, the long-side ceiling within 2x, and the power-of-two result. The `INV-IMG-*` row above covers what counts as a drawable image, which is a different question |
+| Rendering services (no invariant family) | `GridContrast`, `BitmapMath` | `GridContrastTests`, `BitmapMathTests`. They hold no domain rule (DDD-ARCHITECTURE.md §16) but are totality-contracted, so they are listed here rather than left unnamed |
 | `INV-SET-P*`, `INV-STO-*` | `Settings` | `SettingsTests` |
 | `INV-STO-5` | `Settings.Save` (checkpoint) | `SettingsTests` kill + truncation cases, `FolderPickerUiTests.PickedFolder_SurvivesTheProcessBeingKilled` |
 | `INV-REF-*` | `LibraryReference`, wired by `MainActivity` | `LibraryReferenceTests`, `FolderMemoryContractTests`, `FolderPickerUiTests` |
@@ -937,6 +939,19 @@ domain rules — one correction and eight additions:
 - §9 — materialise a boundary call before returning it, so the caller's guard can contain it
 - §9 — a failure that costs the artist nothing is logged, not shown
 - §9 — at the provider boundary, log a failure's type and message, never the exception object
+
+Changed by #22:
+
+No invariant is added or amended. #22 is a comment change in the test suites, and it deletes rather
+than rewrites: every one of the 430 why-comments above a `[Fact]` or `[Theory]` is byte-identical.
+
+One §8 gap came out of it. Fifty section banners went, and three of them were the only place their
+file named an invariant id. Two were already covered by a family row — `INV-SES-10..13` points at
+`DrawingSessionBreakTests`, `INV-CD-*` at `DrawingSessionCountdownTests`. The third was not:
+`INV-IMG-4` is the decode bound, the `INV-IMG-*` row sends a reader to `ReferenceLibraryTests`
+(which covers what counts as a drawable image), and the link to `BitmapMathTests` lived only in that
+banner. §8 now carries it, along with a row for the two rendering suites, which the table had never
+named.
 
 Three consequences worth knowing before the next change:
 
