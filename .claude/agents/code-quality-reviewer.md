@@ -35,7 +35,7 @@ Read surrounding context from unchanged files as needed, but do not report findi
 - Identify overly complex logic that could be simplified
 - Verify proper separation of concerns
 - Check comments against the rules in the **Comments** section below. This is a first-class review
-  responsibility here, not a style note: #11 removed about 1,900 comment lines from production
+  responsibility here, not a style note: #11 removed 1,181 comment lines from production
   source, and no test can protect that — `SourceContract` blanks comments before the contract tier
   reads anything, so comment defects are invisible to every tier in this repo
 
