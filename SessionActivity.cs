@@ -11,25 +11,8 @@ using FigureDrawing.Core;
 
 namespace FigureDrawing
 {
-    // The player screen from the Claude Design mock: the pose on a lightbox stage, a rail with the
-    // countdown ring and the viewing tools, a break overlay between poses, a pause sheet, and the
-    // end-of-session summary.
-    //
-    // All of the session's behaviour is in Core. DrawingSession owns which image is up, how long it has
-    // left, and the pose/break/complete state machine; ViewerTools owns the grayscale/flip/grid/blur
-    // flags and the zoom range. This class does what an Activity is allowed to do: find views, run a
-    // repaint loop, render Core's state, forward taps, and manage the lifecycle.
-    //
-    // NoActionBar theme: the stage is full-bleed, and the default theme's opaque title bar would eat
-    // the top of every pose. session_root uses fitsSystemWindows so the content still clears the
-    // system bars.
-    //
-    // ConfigurationChanges: a fold opening or closing is handled in place rather than by recreating
-    // the Activity. Recreation would restart the current pose (session state is not persisted -
-    // docs/ARCHITECTURE.md §5), which is exactly what a drawer must not lose mid-session.
-    // Exported = false is the platform default for an Activity with no intent filter; it is stated
-    // rather than inherited because the extras this screen trusts (the pool, the config) are only
-    // safe while nothing outside the app can supply them.
+    // Exported = false is the platform default here, stated rather than inherited: the extras this
+    // screen trusts are only safe while nothing outside the app can supply them.
     [Activity(
         Label = "@string/app_name",
         Exported = false,
@@ -38,40 +21,31 @@ namespace FigureDrawing
             | ConfigChanges.ScreenLayout | ConfigChanges.Orientation | ConfigChanges.KeyboardHidden)]
     public class SessionActivity : Activity
     {
-        // Intent extras handed over by MainActivity.StartSession.
-        public const string ExtraPool = "pool";            // string[] of content:// uri strings
-        public const string ExtraSeconds = "seconds";      // int, seconds per image
-        public const string ExtraCount = "count";          // int, images this session shows
-        public const string ExtraBreak = "break";          // int, seconds of rest between poses
-        public const string ExtraShuffle = "shuffle";      // bool, Settings.ShuffleImages
-        public const string ExtraGrayscale = "grayscale";  // bool, Settings.GrayscaleMode
-        public const string ExtraKeepAwake = "keepawake";  // bool, Settings.KeepScreenAwake
-        public const string ExtraChime = "chime";          // bool, Settings.ChimeOnChange
+        public const string ExtraPool = "pool";
+        public const string ExtraSeconds = "seconds";
+        public const string ExtraCount = "count";
+        public const string ExtraBreak = "break";
+        public const string ExtraShuffle = "shuffle";
+        public const string ExtraGrayscale = "grayscale";
+        public const string ExtraKeepAwake = "keepawake";
+        public const string ExtraChime = "chime";
 
         const string LogTag = "FigureDrawing";
 
-        // Decode bound for the pose itself: real photos are far larger, and decoding one at full
-        // resolution would exhaust memory within a few images.
         const int MaxImageDimension = 1080;
 
-        // Saturation-0 filter applied to the ImageView for grayscale value studies.
         static readonly ColorMatrixColorFilter GrayscaleFilter = MakeGrayscaleFilter();
 
-        // Blur radius for the block-in tool, in px. Only reachable on API 31+ (RenderEffect).
         const float BlurRadius = 24f;
 
-        // Repaint cadence for the countdown. Well under a second so the displayed value flips within
-        // a fraction of a second of each boundary; the value itself comes from the clock, so this
-        // interval never affects accuracy (a missed tick cannot slow the countdown down).
+        // Well under a second, so the displayed value flips promptly at each boundary (§7).
         const int TickIntervalMs = 200;
 
-        // Width at which the rail moves from under the pose to beside it (fold open / tablet).
         const int WideScreenWidthDp = 600;
 
-        // Above this many poses the progress strip is dropped rather than drawn as slivers.
+        // Past this the segments would be sub-pixel, so the strip is dropped entirely.
         const int MaxPips = 40;
 
-        // --- Player views ---
         LinearLayout body = null!;
         View stage = null!;
         LinearLayout rail = null!;
@@ -90,7 +64,6 @@ namespace FigureDrawing
         LinearLayout pips = null!;
         TextView stats = null!;
 
-        // --- Tool chips ---
         Button grayscaleChip = null!;
         Button flipChip = null!;
         Button gridChip = null!;
@@ -98,7 +71,6 @@ namespace FigureDrawing
         Button zoomInChip = null!;
         Button zoomOutChip = null!;
 
-        // --- Summary views ---
         View summary = null!;
         TextView summaryImages = null!;
         TextView summaryTime = null!;
@@ -109,90 +81,47 @@ namespace FigureDrawing
         ViewerTools tools = null!;
         Android.OS.Handler ticker = null!;
 
-        // Whether `session` holds a built session. False from the moment a build starts until it is
-        // published on the main thread: the running constructor resolves its first image, which is a
-        // real decode, so it happens off this thread and every path that touches the session has to
-        // tolerate not having one yet.
         bool sessionReady;
 
-        // Which build the screen is waiting for. "Run it again" tapped twice, or a rebuild racing a
-        // teardown, must publish only the newest — an older build that finishes late is discarded
-        // along with the image it decoded.
         int buildGeneration;
 
-        // Whether the screen is between OnResume and OnPause. A session built while the app is in
-        // the background must not come back having burned the time it spent away, and `ticking` is
-        // no substitute: it is false during the very first build too, before the loop has started.
+        // Not interchangeable with `ticking`, which is also false during the very first build,
+        // before the loop has started.
         bool resumed;
 
-        // The repaint callback, held as ONE Runnable instance so it can actually be removed from the
-        // Handler queue. Handler.PostDelayed(Action) wraps the delegate in a fresh Java Runnable each
-        // call, so RemoveCallbacks(Action) would never match — posting and removing the same stored
-        // IRunnable is what guarantees no Tick survives teardown.
         Java.Lang.IRunnable tickRunnable = null!;
         bool ticking;
 
-        // The countdown string currently in the timer views. Display only changes once a second, so
-        // caching it keeps four of every five ticks from calling setText and forcing a layout pass.
         string? lastDisplay;
 
-        // The pose currently attached to `image`. This screen owns it: nothing else holds a
-        // reference, so it must free the pixels when it repoints the view or goes away.
         PoseImage? displayed;
 
-        // --- Prefetch: the next pose, decoded during this one --------------------
-        //
-        // Exactly one decode runs at a time, and `prefetchTask` is what enforces it. Every field
-        // below is read and written on the main thread only — the generation is captured before the
-        // await and compared after it, both on the UI thread — so this family needs no lock and no
-        // volatile. The Task is the one object that crosses threads, and it is immutable once made.
+        // Every field in this family is read and written on the main thread only, which is why none
+        // is volatile or locked; the Task is the one thing that crosses, and it is immutable.
 
-        // The answer the prefetch came back with, and the id it answers for. A null image under a
-        // non-null id is an answer too: "this file is unreadable". Caching that is what stops the
-        // boundary tick paying a second two-pass open to learn the same thing.
+        // A null image under a non-null id is an answer too: "this file is unreadable".
         string? prefetchedId;
         PoseImage? prefetched;
 
-        // The decode running right now and the id it is for, or null when the slot is free. The slot
-        // is what bounds this screen to one background decode: without it, every command that
-        // changes the upcoming id would start another, and a handful of quick taps would put several
-        // full-size decodes in flight at once.
-        //
-        // Cleared only when the decode settles — deliberately NOT by CancelPrefetch, which abandons
-        // the *result* but cannot stop the work.
         string? prefetchingId;
         Task<PoseImage?>? prefetchTask;
 
-        // Set when the boundary arrived before the decode did and the session took the result
-        // straight off the Task. The continuation then leaves it alone: the image already has an
-        // owner, and releasing or caching it there would be a second one.
+        // The boundary took the result straight off the Task, so the session owns it: the
+        // continuation must not release or cache it, which would be a second owner.
         bool prefetchClaimed;
 
-        // Cancels the queued-but-not-started decode, and lets a running one give up between its two
-        // passes rather than allocating a full-size bitmap for a screen that has gone away.
         CancellationTokenSource? prefetchCancel;
 
-        // Which prefetch the screen still wants. Every start and every abandon bumps it, so a decode
-        // that comes back under an old number knows it lost and frees what it produced instead of
-        // caching it.
         int prefetchGeneration;
 
-        // --- Rule-of-thirds guides ---
-        // One painter per guide, in GridStyles order: the two verticals left to right, then the two
-        // horizontals top to bottom.
+        // In GridStyles order: verticals left to right, then horizontals top to bottom. Applied by
+        // index, so the order is the wiring.
         GridLinePainter[] gridPainters = Array.Empty<GridLinePainter>();
 
-        // The four colors.xml tokens GridContrast picks between, read once.
         GridPalette gridPalette;
 
-        // The samples the guides are resolved against travel with the pose that produced them
-        // (PoseImage), computed on the decode thread rather than here. Zooming or flipping
-        // re-resolves the guides from that block without touching the bitmap again.
-
-        // Held so it can be detached in OnDestroy (docs/ARCHITECTURE.md §8).
         EventHandler<View.LayoutChangeEventArgs>? stageLayoutChanged;
 
-        // Session inputs, kept so "Run it again" can rebuild an identical session.
         string[] pool = Array.Empty<string>();
         int secondsPerImage;
         int imageCount;
