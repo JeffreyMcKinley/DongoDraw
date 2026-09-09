@@ -672,6 +672,16 @@ These bind the objects together and are the ones most easily broken by a plausib
   the tree reports now (`INV-GRP-1`) and a query that yields nothing is the answer the adapter
   already gives a revoked grant (`INV-TREE-4`) — and safe only because it is discarded, never shown.
 
+  Whether a re-walk may *keep* the pool already on screen is decided on the whole tree URI, never on
+  a bare document id. An id like `primary:Pictures` is not unique across providers, so a same-named
+  folder on an SD card or a cloud provider would otherwise inherit the previous provider's pool —
+  and its armed Start — under the new folder's name. A null on either side means "no folder": a
+  first pick keeps nothing, and a tree that cannot even be named is never the folder already shown.
+
+  A tree that cannot be named is also a *failure*, not an empty folder. Returning an empty library
+  for one would caption it "no images found", telling the artist a folder they cannot open is empty
+  (`INV-REF-5` keeps `Unavailable` and `Empty` apart for exactly this reason).
+
 **Consolidation**
 
 - `INV-X-12` — Merging objects never merges responsibilities. A rule that was enforced in one place
@@ -829,6 +839,15 @@ Changed by #17:
 Both halves shipped and are covered by `SettingsTests`; neither was written down outside
 `Settings.cs`. The `INV-SET-P*` / `INV-STO-*` families already have §8 enforcement rows, so §8 is
 unchanged.
+
+Changed by #19:
+
+| Rule | Change | Why |
+|---|---|---|
+| `INV-X-13` | **Widened** | It said which load may write the pool without saying what counts as the same folder. Keeping a pool is decided on the whole tree URI, never a bare document id, which is not unique across providers. It also now separates "a tree that cannot be named" from "an empty folder" — a failure, not zero images |
+
+The rule shipped and is covered by `LibraryLoadStateTests`; it was recorded only in
+`LibraryLoadState.cs`. `INV-X-13` already has a §8 enforcement row, so §8 is unchanged.
 
 One behaviour did change, deliberately: when the consecutive-failure budget is exhausted the session
 now banks **no** partial time for the unreadable image it died on. The old `SessionPlayer` routed
