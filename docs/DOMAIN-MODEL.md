@@ -299,6 +299,24 @@ play, `INV-POOL-6`). The second lives here rather than on `ReferenceLibrary` bec
 supplies the pool and must not have to know how long a session is — the dependency runs one way
 (DDD-ARCHITECTURE.md §16).
 
+**An estimate counts the gaps, not the poses.** `EstimateSeconds` is every pose plus one break
+between each *adjacent pair* — a session of n poses has n-1 breaks, because a break after the last
+pose is time the artist has already stopped drawing for.
+
+**`HandoffBound` is total for every `int` it can be handed.** `INV-SET-1` validates the count as
+"> 0" and nothing more, so a pasted nine-digit number reaches the multiplication that sizes the
+handoff. It is computed in 64-bit and then narrowed, because an overflow there wraps negative and a
+negative bound is an empty pool (`INV-POOL-5` then refuses to start the session) — a wrong answer
+that looks like an empty folder.
+
+**The multiple is deliberately greater than one.** The player is handed an array and cannot ask for
+more, so "run it again" redraws from the same ids; at exactly the pose count a second run would
+replay the first run's images in a new order rather than showing different ones.
+
+**The presets are the model's, not the screen's.** `SecondsPresets` and `BreakPresets` are the
+quick-pick values *and* their render order. The setup screen walks them to build its chip rows and
+never hardcodes a value it binds, so adding a preset is a change here and nowhere else.
+
 **Rules**
 
 - `INV-SET-1` — **Parsing is domain logic, not UI logic.** Blank, non-numeric, and non-positive
@@ -773,6 +791,15 @@ Changed by #13:
 As with #12, none of this is a change to behaviour: all three shipped, all three are covered by
 `LibraryReferenceTests`, and all three were recorded only in the comments #13 deleted. The
 `INV-REF-*` family already has a §8 enforcement row, so §8 is unchanged.
+
+Changed by #14:
+
+| Rule | Change | Why |
+|---|---|---|
+| §3.1 card | **Four sentences added** | What `EstimateSeconds` counts, that `HandoffBound` is total across the whole `int` range, why its multiple is greater than one, and that the presets carry their own render order. All four shipped, all four are covered by `SessionSetupTests`, none was written down outside `SessionSetup.cs` comments |
+
+No invariant is added or changed: these are card sentences, not new `INV-SET-*` rules, so the §8
+enforcement row for the family stands as it is.
 
 Changed by #16:
 
