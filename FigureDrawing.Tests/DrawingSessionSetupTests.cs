@@ -67,8 +67,6 @@ public class DrawingSessionSetupTests
         Assert.Equal(expected, draft.ImageCount);
     }
 
-    // --- Break between poses -------------------------------------------------
-
     [Fact]
     public void Evaluate_CarriesTheBreakIntoTheConfig()
     {
@@ -105,8 +103,6 @@ public class DrawingSessionSetupTests
         Assert.Equal(SessionSetup.DefaultBreakSeconds, draft.BreakSeconds);
     }
 
-    // --- Session length estimate ---------------------------------------------
-
     // The estimate is shown under the Start button, which is visible before a folder is picked.
     [Fact]
     public void Estimate_IsAvailableBeforeAFolderIsPicked()
@@ -123,8 +119,6 @@ public class DrawingSessionSetupTests
         Assert.Equal(0, Evaluate("", "10", folderSelected: true).EstimateSeconds);
         Assert.Equal(0, Evaluate("60", "x", folderSelected: true).EstimateSeconds);
     }
-
-    // --- A draft is not a run -------------------------------------------------
 
     [Fact]
     public void Draft_IsInTheDraftPhase_WithNothingRunning()

@@ -5,10 +5,6 @@ namespace FigureDrawing.Tests;
 // async session build and MainActivity's persistence chain — even when neither Activity's code
 // directly touches the other's state. These tests pin the isolation properties that prevent the
 // class of change that could produce such a regression.
-//
-// The tier is contract (docs/ARCHITECTURE.md §11): read both Activities as files via SourceContract,
-// assert on API names and structural properties, never on spelling or formatting. Comments and
-// string literals are stripped (SourceContract.Code) so a comment cannot satisfy an assertion.
 public sealed class CrossActivityContractTests
 {
     static readonly SourceContract Main = new("MainActivity.cs");

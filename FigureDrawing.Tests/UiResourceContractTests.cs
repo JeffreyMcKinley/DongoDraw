@@ -144,8 +144,6 @@ public class UiResourceContractTests
         Assert.DoesNotContain(messages, string.IsNullOrWhiteSpace);
     }
 
-    // --- Claude Design import: the three tabbed panes -------------------------
-
     // Session / Images / Settings are panes of one screen, so the tab bar and the panes it switches
     // between must both exist. Losing either leaves a screen with no way back to the others.
     [Theory]

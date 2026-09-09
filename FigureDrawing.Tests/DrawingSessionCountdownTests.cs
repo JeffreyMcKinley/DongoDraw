@@ -226,8 +226,6 @@ public class DrawingSessionCountdownTests
         Assert.True(session.TotalDrawingTime <= TimeSpan.FromSeconds(10));
     }
 
-    // --- Why a session is paused (INV-CD-8) ----------------------------------
-
     [Fact]
     public void ANewSession_IsNotPausedByTheUser()
     {

@@ -22,8 +22,6 @@ public class GridContrastTests
     const int White = unchecked((int)0xFFFFFFFF);
     const int Black = unchecked((int)0xFF000000);
 
-    // --- Luminance ------------------------------------------------------------
-
     [Theory]
     // The sRGB coefficients, pinned one channel at a time.
     [InlineData(unchecked((int)0xFF000000), 0.0)]
@@ -40,8 +38,6 @@ public class GridContrastTests
     public void Luminance_IgnoresAlpha() =>
         Assert.Equal(GridContrast.Luminance(unchecked((int)0xFFFFFFFF)),
                      GridContrast.Luminance(0x00FFFFFF));
-
-    // --- Tone selection -------------------------------------------------------
 
     [Theory]
     [InlineData(0.0)]
@@ -70,8 +66,6 @@ public class GridContrastTests
         }
     }
 
-    // --- Per-line sampling ----------------------------------------------------
-
     // The case that motivated sampling per line rather than averaging the whole pose: one
     // compromise colour would be wrong on both halves.
     [Fact]
@@ -86,8 +80,6 @@ public class GridContrastTests
         Assert.Equal(Dark, styles.VerticalLeft);
         Assert.Equal(Light, styles.VerticalRight);
     }
-
-    // --- fitCenter mapping ----------------------------------------------------
 
     // A square pose in a wide stage is pillarboxed: both verticals sit on the bar, not on the
     // image, and fall back to the light style that reads over @color/stage.
@@ -123,8 +115,6 @@ public class GridContrastTests
         Assert.Equal(Dark, styles.VerticalRight);
     }
 
-    // --- Zoom -----------------------------------------------------------------
-
     // Zooming grows the drawn rect past the stage edges, so the stage thirds map to positions
     // closer to the middle of the image. A pose that is only light down its centre proves the
     // bands actually moved: at 1:1 both guides read the dark surround, zoomed in they read the
@@ -147,8 +137,6 @@ public class GridContrastTests
         Assert.Equal(Dark, zoomed.VerticalRight);
     }
 
-    // --- Flip -----------------------------------------------------------------
-
     // Flip is a negative horizontal scale, so each vertical guide reads the mirrored column — and
     // the horizontals are untouched, because the app never mirrors vertically.
     [Fact]
@@ -168,8 +156,6 @@ public class GridContrastTests
         Assert.Equal(plain.HorizontalBottom, flipped.HorizontalBottom);
     }
 
-    // --- Band clamping --------------------------------------------------------
-
     // A guide landing exactly on an image edge narrows its band rather than reading out of bounds.
     // This stage puts the verticals on u = 0 and u = 1 precisely.
     [Fact]
@@ -183,8 +169,6 @@ public class GridContrastTests
         Assert.Equal(Dark, styles.VerticalLeft);
         Assert.Equal(Dark, styles.VerticalRight);
     }
-
-    // --- Totality -------------------------------------------------------------
 
     public static TheoryData<int, int, int, int, int, double> Degenerate => new()
     {
@@ -240,8 +224,6 @@ public class GridContrastTests
         Assert.Equal(Light, styles.HorizontalTop);
         Assert.Equal(Light, styles.HorizontalBottom);
     }
-
-    // --- Sample-grid builders -------------------------------------------------
 
     static int[] Uniform(int argb)
     {

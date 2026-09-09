@@ -8,8 +8,6 @@ namespace FigureDrawing.Tests;
 // refactoring the app cannot fail the test that validates the tool.
 public class SourceContractTests
 {
-    // --- Blanking comments and literals --------------------------------------
-
     [Fact]
     public void TheStripper_RemovesCommentsAndLiterals()
     {
@@ -35,8 +33,6 @@ public class SourceContractTests
         // A brace inside a literal must never reach the brace matcher.
         Assert.DoesNotContain("}'", stripped, StringComparison.Ordinal);
     }
-
-    // --- Reading one method's body -------------------------------------------
 
     static SourceContract Fixture(string body) => SourceContract.ForTesting("Fixture.cs", body);
 

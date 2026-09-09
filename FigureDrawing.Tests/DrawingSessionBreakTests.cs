@@ -33,8 +33,6 @@ public class DrawingSessionBreakTests
         new(pool ?? Pool, new SessionConfig(seconds, count, breakSeconds), load ?? Echo,
             shuffle: false, random: new Random(1), clock: clock.Read, onUnreadable: onUnreadable);
 
-    // --- Starting state ------------------------------------------------------
-
     [Fact]
     public void StartsOnTheFirstPose_WithAFullClock()
     {
@@ -70,8 +68,6 @@ public class DrawingSessionBreakTests
 
         Assert.True(s.IsComplete);
     }
-
-    // --- The rule this type exists for: expiry advances AND restarts the clock ----
 
     [Fact]
     public void PoseExpiry_CountsThePose_AndRestartsTheClockForTheNextOne()
@@ -132,8 +128,6 @@ public class DrawingSessionBreakTests
         Assert.Equal("0:20", s.Display);
         Assert.False(s.IsComplete);
     }
-
-    // --- Break phase ---------------------------------------------------------
 
     [Fact]
     public void WithABreak_PoseExpiryEntersTheBreak_OnItsOwnClock()
@@ -230,8 +224,6 @@ public class DrawingSessionBreakTests
         Assert.False(s.OnBreak);
         Assert.Null(s.CurrentImage);
     }
-
-    // --- Commands ------------------------------------------------------------
 
     [Fact]
     public void Next_IsTheManualDoneTap_CountingThePose()
@@ -357,8 +349,6 @@ public class DrawingSessionBreakTests
         Assert.True(s.IsComplete);
     }
 
-    // --- Ring / progress readouts --------------------------------------------
-
     [Theory]
     [InlineData(0, 100)]
     [InlineData(15, 50)]
@@ -391,8 +381,6 @@ public class DrawingSessionBreakTests
         Assert.Equal(2, s.CurrentPoseNumber);
     }
 
-    // --- Unreadable images ---------------------------------------------------
-
     [Fact]
     public void UnreadableImages_AreSkippedPast_AndReported()
     {
@@ -417,8 +405,6 @@ public class DrawingSessionBreakTests
         Assert.True(s.CouldNotDisplayImage);
         Assert.Null(s.CurrentImage);
     }
-
-    // --- What a tick reports (INV-SES-13) ------------------------------------
 
     // The screen plays the change-of-pose tone on what Tick reports, so "a rest started" and "a new
     // pose started" have to be different answers. Reconstructing them from the state afterwards is

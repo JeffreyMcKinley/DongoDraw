@@ -36,8 +36,6 @@ public class BitmapMathTests
         }
     }
 
-    // --- The memory ceiling (INV-IMG-4, ARCHITECTURE.md §8) -------------------
-
     [Theory]
     // Already inside the ceiling -> no downsample.
     [InlineData(800, 600, 1080, 1)]

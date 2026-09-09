@@ -43,8 +43,6 @@ public class SessionSetupTests
         Assert.True(SessionSetup.IsValidCount(SessionSetup.DefaultImageCount));
     }
 
-    // --- Session length estimate ---------------------------------------------
-
     [Theory]
     [InlineData(30, 12, 0, 360)]        // 12 * 30s, no breaks
     [InlineData(60, 10, 15, 735)]       // 10 * 60s + 9 breaks of 15s
@@ -53,8 +51,6 @@ public class SessionSetupTests
     public void EstimateSeconds_CountsBreaksBetweenPosesOnly(
         int seconds, int count, int breakSeconds, int expected) =>
         Assert.Equal(expected, SessionSetup.EstimateSeconds(new SessionConfig(seconds, count, breakSeconds)));
-
-    // --- Quick-pick chips ----------------------------------------------------
 
     // The setup screen renders one chip per preset, so the presets must stay usable inputs.
     [Fact]
@@ -71,8 +67,6 @@ public class SessionSetupTests
         Assert.Equal(0, SessionSetup.BreakPresets[0]);
         Assert.All(SessionSetup.BreakPresets, b => Assert.True(b >= 0));
     }
-
-    // --- How wide the handoff has to be (INV-POOL-6) -------------------------
 
     // A session draws from what it was handed and cannot ask the library for more, so the bound is a
     // function of how long the session is — not a flat number sized only by what the transport will

@@ -348,8 +348,6 @@ public class SessionScreenContractTests
         Assert.Contains("return null;", decode);
     }
 
-    // --- Decoding the next pose ahead of the boundary (#5) ---------------
-
     // A decode running when the screen goes away cannot be stopped, so every way out has to make
     // sure its result is thrown away rather than cached — otherwise this trades a stalled repaint
     // for a leaked full-size bitmap. Android-only wiring: no other tier can reach it.
@@ -451,8 +449,6 @@ public class SessionScreenContractTests
     [Fact]
     public void SessionActivity_StatesTheFailureBudget() =>
         Assert.Contains("maxConsecutiveFailures:", Screen.MethodBody("BuildSession"), StringComparison.Ordinal);
-
-    // --- Rule-of-thirds guides -----------------------------------------------
 
     // The four guides must be inside session_grid, or toggling the grid chip would leave some of
     // them painted over every pose.
