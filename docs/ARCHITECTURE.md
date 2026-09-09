@@ -228,9 +228,21 @@ under test.
 `CancelPrefetch` and `LibraryLoader` are the two worked examples; a third piece of background work
 follows this or argues why not.
 
-- One `async Task` method in the Android layer wrapping **one** `Task.Run`. Never `async void`: an
-  exception after the first await in an `async void` is rethrown on the looper and kills the process,
-  which §9 forbids at a boundary.
+One of the two deviates, and knowingly: `SessionActivity.BuildSession` hands `Task.Run` a delegate
+that captures the Activity, because the session's running constructor resolves its first pose
+through `LoadPose` — an instance method reaching the prefetch fields and the Activity's own
+`ContentResolver`. It is the one path that touches that family off the main thread. `DecodePose`
+below it is written to the shape (static, handed its resolver) precisely because it is the half that
+runs on the pool thread every other time.
+
+- One `async Task` method in the Android layer wrapping **one** `Task.Run`, for work a caller
+  awaits. Never `async void` *there*: an exception after the first await in an `async void` is
+  rethrown on the looper and kills the process, which §9 forbids at a boundary.
+- **Fire-and-forget work started from a repaint or a lifecycle call returns `void`**, because no
+  caller exists to observe a faulted `Task` — `SessionActivity.BuildSession` and `DecodeAhead` are
+  both `async void` for that reason, and the bullet below on wrapping the *whole* body is what makes
+  it safe. Returning `Task` there would produce an unobserved fault instead of a caught one. This is
+  the exception to the rule above, not a licence: work anything awaits still returns `Task`.
 - The worker `Task.Run` calls is a **`static`** method taking everything it needs as parameters, and
   the delegate handed to `Task.Run` may capture only the owning helper — never an Activity. That is
   what makes "the background thread cannot touch a view or `Settings`" structural rather than a
@@ -299,7 +311,17 @@ follows this or argues why not.
 - `OnPause` freezes the pose clock and stops the repaint loop; `OnResume` restores both, unless the
   drawer's own pause is still in effect (`INV-CD-8`). A backgrounded app must not burn pose time or
   fire a timer while hidden, and must not come back running from a pause the drawer asked for.
-- `OnDestroy` stops the loop, clears `KeepScreenOn`, and disposes anything it owns.
+- `OnDestroy` stops the loop, clears `KeepScreenOn`, and disposes anything it owns. It must also
+  survive a screen that never finished being built: `OnCreate` can throw after `SetContentView` and
+  before the views are bound, so teardown is null-safe throughout — an NRE there would mask the
+  original failure and leak the bitmap the teardown came to free. `KeepScreenOn` is held for the
+  whole session unless the drawer turned it off, and clearing it here is what stops it leaking past
+  the screen.
+- **The player has a pre-session state.** Its session is built asynchronously, so between `OnCreate`
+  and the publish there is no aggregate to ask: every entry point — commands, ticks, repaints, both
+  lifecycle callbacks — guards on that, and the stage shows a building caption meanwhile. It is a
+  fourth screen state beside player, error and summary, and a new command handler added without the
+  guard dereferences a null session on the first frame.
 - Every callback queued on the repaint `Handler` must be removable, and every listener attached to a
   long-lived object must be detached. The one exception is the one-shot `await` continuation of §7,
   which is deliberately not removable — it is the code that frees a bitmap nobody wants, so removing
@@ -395,6 +417,12 @@ follows this or argues why not.
   is `GetType().Name` plus `Message`; an overload taking the `Throwable` is not. This is narrower
   than the other bullets here on purpose — a failure that cannot name the artist's files (a failed
   settings write, a screen that would not launch) may log the exception whole, and several do.
+- **A decode failure logs the type and nothing else.** Narrower again, and the reason is the
+  opposite end of the same problem: a provider's exception *message* routinely carries the resolved
+  on-disk path of the file it could not open. Where the rule above keeps a stack out of the log,
+  this one keeps the message out too — `SessionActivity` logs `GetType().Name` alone at all four of
+  its decode and sampling boundaries. Adding `Message` there to "improve" the diagnostic is the
+  regression this exists to stop.
 - Catching broad `Exception` is acceptable at those boundaries, and only there. Elsewhere, catch the
   specific type or let it throw.
 - Never log image contents or full user file paths beyond the content URI already logged.
@@ -402,6 +430,13 @@ follows this or argues why not.
 ## 10. UI resources
 
 - Layouts are `Resources/layout/activity_*.xml`, strings are `Resources/values/strings.xml`.
+- **The player's rail moves at 600 dp of screen width** (`SessionActivity.WideScreenWidthDp`), which
+  is a fold opening or a tablet. Below it the rail sits under the pose and the body is vertical;
+  at or above it the body turns horizontal, the rail becomes a fixed-width column beside the pose,
+  and the session-progress strip becomes visible — the strip exists only in the wide layout, where
+  there is room for it. Handled in place rather than by recreating the Activity (§5), so it is code
+  rather than a layout qualifier. The strip is also dropped above `MaxPips` (40) poses at any width,
+  because the segments would be sub-pixel; the stats line carries the progress instead.
 - Views are resolved by `FindViewById<T>(Resource.Id.x)!` in `OnCreate` and stored in `null!` fields.
 - **User-facing text always comes from `strings.xml`** via `GetString(Resource.String.y)`. No string
   literals in an Activity.

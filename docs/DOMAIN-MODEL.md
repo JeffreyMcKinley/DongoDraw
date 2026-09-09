@@ -938,6 +938,25 @@ domain rules — one correction and eight additions:
 - §9 — a failure that costs the artist nothing is logged, not shown
 - §9 — at the provider boundary, log a failure's type and message, never the exception object
 
+Changed by #21:
+
+No invariant is added or amended — `SessionActivity` is the Android layer, and every session rule it
+echoed was already in §4.1 and the `INV-PLY-*` family. Five Android-layer rules went to
+`ARCHITECTURE.md`, one of them a correction:
+
+- §9 — **corrected.** #20 added "log a failure's type and message" from `MainActivity`'s SAF
+  boundaries, where that is right. The player's decode boundary logs the type *alone*, because a
+  provider's exception message carries the resolved on-disk path; the doc as #20 left it would have
+  had a contributor add the message back.
+- §7 — `async void` is permitted for fire-and-forget work started from a repaint or a lifecycle
+  call, and forbidden for work a caller awaits. The section named two `async void` methods as its
+  worked example while its first bullet banned the shape outright.
+- §7 — the player's build deviates from the static-worker shape, knowingly, because the running
+  constructor resolves its first pose through an instance method.
+- §8 — teardown must survive a screen that never finished being built, and the player has a
+  pre-session state that every entry point guards on.
+- §10 — the rail's 600 dp breakpoint, what moves at it, and the pip cap.
+
 Three consequences worth knowing before the next change:
 
 - **The draft is a session, so `Evaluate` is generic.** `MainActivity` calls
