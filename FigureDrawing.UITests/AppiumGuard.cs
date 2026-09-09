@@ -19,7 +19,6 @@ internal sealed class AppiumGuard(AndroidDriver driver)
     public IReadOnlyCollection<IWebElement> FindAllById(string localId) =>
         Driver.FindElements(MobileBy.Id(UiTestEnvironment.ViewId(localId)));
 
-    // Returns the element once present, or null if it never appears within the timeout.
     public IWebElement? WaitForId(string localId, TimeSpan timeout)
     {
         var deadline = DateTime.UtcNow + timeout;

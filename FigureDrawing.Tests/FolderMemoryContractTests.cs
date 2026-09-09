@@ -9,11 +9,6 @@ namespace FigureDrawing.Tests;
 // and the extra that tells the system picker where to open — so it is pinned here by reading
 // MainActivity as a file, the same tier that already guards the resource lookups. The behaviour is
 // covered on a device by the folder-memory tests in FolderPickerUiTests.
-//
-// Comments and string literals are stripped before anything is asserted: a tier whose assertions a
-// comment could satisfy would stay green through the exact deletion it exists to catch. What is
-// asserted is which API is reached from which method, never how a statement is spelled — a rename
-// or a reformat must not fail a build that still behaves.
 public class FolderMemoryContractTests
 {
     // MainActivity as text, comments and literals blanked. The machinery lives in SourceContract,

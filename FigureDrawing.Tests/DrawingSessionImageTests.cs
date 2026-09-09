@@ -181,8 +181,6 @@ public class DrawingSessionImageTests
             new DrawingSession<string>(Pool, new SessionConfig(30, 1), null!));
     }
 
-    // --- Asking what comes next (INV-PLY-7) ----------------------------------
-
     // The screen decodes the next pose while the current one is up, which it can only do if asking
     // is free. A peek that advanced the sequence, started a clock or counted anything would be a
     // query that mutates (INV-SES-1, INV-X-12).
@@ -288,8 +286,6 @@ public class DrawingSessionImageTests
 
         Assert.Equal(plain, peeked);
     }
-
-    // --- Not loading a broken file twice (INV-PLY-8) -------------------------
 
     // A pool smaller than the count repeats by design, so without this the screen pays a real decode
     // for the same broken file on every pass. The skip still happens — the session only stops

@@ -191,8 +191,6 @@ public class ReferenceLibraryTests
         Assert.Throws<ArgumentNullException>(() => new ReferenceLibrary(tree, null!));
     }
 
-    // --- Identity, mapping, and re-enumeration --------------------------------
-
     [Fact]
     public void Library_KeepsItsRootIdentityAndName()
     {
@@ -334,8 +332,6 @@ public class ReferenceLibraryTests
         Assert.Equal(new[] { "z", "y", "x" }, reloaded.Pool);
         Assert.Equal(new[] { "a", "b" }, library.Pool);
     }
-
-    // --- The bounded handoff (INV-POOL-6) ------------------------------------
 
     static ReferenceLibrary LibraryOf(int imageCount)
     {

@@ -3,10 +3,6 @@ namespace FigureDrawing.Tests;
 // Contract tests for #4: the reference library loads off the UI thread, and a load that has
 // been superseded writes nothing (INV-X-13, "a library load is abandonable").
 //
-// A separate file from FolderMemoryContractTests because it is a separate invariant family
-// (docs/DOMAIN-MODEL.md §8), and it reads two sources: LibraryLoader owns the walk, the decodes and
-// the abandonment guard, while MainActivity owns the lifecycle that drives them.
-//
 // This tier is a regression fence for named decisions, not a proof. It cannot see a scheduler,
 // cannot prove the walk left the UI thread, and cannot detect a leaked bitmap. Every assertion below
 // is therefore a decision a reviewer might plausibly reverse — the orderings especially, which are
@@ -18,8 +14,6 @@ public class LibraryLoadContractTests
 {
     static readonly SourceContract Loader = new("LibraryLoader.cs");
     static readonly SourceContract Activity = new("MainActivity.cs");
-
-    // --- The load runs off the UI thread ---------------------------------------
 
     // The whole point of the ticket: the SAF walk (one blocking provider query per folder) and the
     // preview decodes must not happen on the thread that draws.
@@ -105,8 +99,6 @@ public class LibraryLoadContractTests
         // simply frees them one at a time, which is the cost this test is named for.
         Assert.Contains("break;", abandoned, StringComparison.Ordinal);
     }
-
-    // --- A superseded load writes nothing (INV-X-13) ---------------------------
 
     // Every load takes a number on the way out. Taking it FIRST is what makes a load that never
     // reaches the walk still supersede the one in flight; take it later and the previous load
@@ -328,8 +320,6 @@ public class LibraryLoadContractTests
         Assert.True(raised < rendered, "The failure must be recorded before the state is re-rendered.");
         Assert.True(rendered < lowered, "The flag must outlive the render that reads it.");
     }
-
-    // --- Lifecycle -------------------------------------------------------------
 
     // A screen that is going away abandons its load. OnStop as well as OnDestroy: MainActivity is
     // stopped, not destroyed, while a session runs, and a load landing after the grid was released
@@ -576,8 +566,6 @@ public class LibraryLoadContractTests
             SourceContract.BlockAfter(result, noFolder.Index + noFolder.Length),
             StringComparison.Ordinal);
     }
-
-    // --- The loading state -----------------------------------------------------
 
     // A folder being read is not a folder that turned out to be empty. RenderLibrary writes
     // empty_folder_text for an empty library, so the loading caption has to be a separate path.

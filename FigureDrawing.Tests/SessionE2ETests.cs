@@ -2,11 +2,6 @@ using FigureDrawing.Core;
 
 namespace FigureDrawing.Tests;
 
-// Cross-context end-to-end: a whole session wired through the REAL objects the screens use —
-// the reference library enumerates a picked folder, the setup draft produces the config, and the
-// session aggregate runs it start-to-summary (sequence, pose clock, image resolution, totals). No
-// Android/Appium here; this drives the same public surface SessionActivity drives.
-//
 // The Screen harness below mirrors that Activity's loop (repaint, advance at zero, pause/resume on
 // lifecycle, and decoding the next pose while the current one is up), so a break in the wiring shows
 // up here instead of only on a device. What it does NOT model is the threading: the real screen
@@ -15,7 +10,6 @@ namespace FigureDrawing.Tests;
 // — is pinned by SessionScreenContractTests instead, being unreachable from here.
 public class SessionE2ETests
 {
-    // In-memory document tree so the reference library runs for real against a picked "folder".
     sealed class FakeTree(Dictionary<string, DocumentEntry[]> children) : IDocumentTree
     {
         public IEnumerable<DocumentEntry> GetChildren(string parentDocumentId) =>
@@ -103,10 +97,8 @@ public class SessionE2ETests
 
         public TimeSpan TickInterval { get; } = TimeSpan.FromMilliseconds(200);
 
-        // What the timer view currently reads, recorded on every repaint.
         public List<string> DisplayedTimes { get; } = [];
 
-        // Each image as it appeared on screen, in order.
         public List<string> DisplayedImages { get; } = [];
 
         // One pass of the Handler loop: repaint, then let the session expire the phase if its time
@@ -239,8 +231,6 @@ public class SessionE2ETests
             screen.Tick();
         }
     }
-
-    // --- Whole sessions -------------------------------------------------------
 
     [Fact]
     public void FullSession_FromPickedFolder_ProducesExpectedSummary()
@@ -457,8 +447,6 @@ public class SessionE2ETests
         Assert.Equal(1, attempts.Count(a => a.Contains("broken2")));
     }
 
-    // --- The screen's repaint loop --------------------------------------------
-
     // At zero the next image loads automatically and the count advances; the timer resets for each
     // new image; the whole session runs itself to completion.
     [Fact]
@@ -582,8 +570,6 @@ public class SessionE2ETests
         Assert.Equal(2, screen.Session.ImagesDisplayed);
     }
 
-    // --- Pausing on purpose, across the lifecycle (INV-CD-8) -------------------
-
     // The flow the pause reason exists for: the drawer pauses, puts the phone down, the app is
     // backgrounded and comes back. The pose must still be stopped, the sheet still up, and no time
     // burned — only an explicit resume restarts it.
@@ -668,8 +654,6 @@ public class SessionE2ETests
         Assert.True(screen.Ticking);
         Assert.Equal("0:30", screen.Session.Display);
     }
-
-    // --- The pose-change tone -------------------------------------------------
 
     // Only a change INTO a pose chimes. With a break configured that is one tone per boundary, not
     // two, and the tone at a break's start would announce a pose the drawer cannot see yet.

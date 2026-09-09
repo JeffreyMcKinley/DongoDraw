@@ -56,8 +56,6 @@ public class AndroidBuildTests(ITestOutputHelper output)
         Assert.Contains(removeGlob, removes);
     }
 
-    // --- The manifest -------------------------------------------------------
-
     static readonly XNamespace Android = "http://schemas.android.com/apk/res/android";
 
     static XElement Application =>

@@ -30,8 +30,6 @@ public class DrawingSessionTests
         new(pool ?? Pool, new SessionConfig(seconds, count), id => id, shuffle, new Random(seed),
             (clock ?? new FakeClock()).Read);
 
-    // --- Sequence / selection ------------------------------------------------
-
     [Fact]
     public void StartsOnAnImageFromThePool()
     {
@@ -76,8 +74,6 @@ public class DrawingSessionTests
         Assert.Equal(a, b);
     }
 
-    // --- Count / completion --------------------------------------------------
-
     [Fact]
     public void NextDecrementsRemainingAndCountsTowardTotal()
     {
@@ -119,8 +115,6 @@ public class DrawingSessionTests
         Assert.True(s.IsComplete);
     }
 
-    // --- Skip semantics ------------------------------------------------------
-
     [Fact]
     public void SkipDoesNotCountTowardTotalButChangesImage()
     {
@@ -142,8 +136,6 @@ public class DrawingSessionTests
         Assert.False(s.IsComplete);
         Assert.Equal(0, s.CompletedCount);
     }
-
-    // --- Time accounting -----------------------------------------------------
 
     [Fact]
     public void BanksDrawingTimePerCompletedImage()
@@ -192,8 +184,6 @@ public class DrawingSessionTests
         Assert.Equal(TimeSpan.FromSeconds(42), s.TotalDrawingTime);
     }
 
-    // --- Pool smaller than count (repeat) ------------------------------------
-
     [Fact]
     public void CountLargerThanPool_RepeatsToHonorCount()
     {
@@ -215,8 +205,6 @@ public class DrawingSessionTests
         Assert.Equal(pool.OrderBy(v => v), firstPass.OrderBy(v => v)); // full pass, no repeat yet
     }
 
-    // --- Degenerate pools ----------------------------------------------------
-
     [Fact]
     public void EmptyPool_CompletesImmediately()
     {
@@ -233,8 +221,6 @@ public class DrawingSessionTests
         Assert.True(s.IsComplete);
         Assert.Null(s.CurrentImage);
     }
-
-    // --- Pausing the session clock -------------------------------------------
 
     // Drawing time is time spent drawing. A break between poses, a backgrounded app and an explicit
     // pause all stop the clock; none of them may end up in the total.
@@ -316,8 +302,6 @@ public class DrawingSessionTests
         s.Resume();
         Assert.False(s.IsRunning);
     }
-
-    // --- Skipped count / summary projection ----------------------------------
 
     [Fact]
     public void SkippedCount_StartsAtZero_AndOnlySkipRaisesIt()
