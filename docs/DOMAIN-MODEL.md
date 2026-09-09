@@ -500,7 +500,11 @@ a pose lasts, and it survives independently of any pose.
 - `INV-VIEW-1` — **A viewing aid never touches the count or the clock.** Toggling grayscale
   mid-pose changes pixels, nothing else.
 - `INV-VIEW-2` — **Zoom is clamped to `[MinZoom, MaxZoom]`** and `CanZoomIn` / `CanZoomOut` are
-  true only when a step would actually move it.
+  true only when a step would actually move it. `MinZoom` is 1.0 because 1.0 *is* fit-to-screen:
+  below it the pose is letterboxed inside its own frame, which is a smaller image and no more of
+  anything. The clamp also rounds, because zoom moves in fixed steps and stepping through binary
+  fractions accumulates the drift that makes `0.1 + 0.2` famous — unrounded, repeated stepping
+  reaches a value near a bound that never equals it, so the button at that end never disables.
 - `INV-VIEW-3` — **Toggles are pure flags.** The entity holds no bitmap, no matrix, and no view;
   the screen reads the flags and renders. How an aid *looks* is therefore not held here either: the
   rule-of-thirds guides take their tone from the pose beneath them, and that decision lives in
@@ -508,7 +512,9 @@ a pose lasts, and it survives independently of any pose.
   ([DDD-ARCHITECTURE.md §16](DDD-ARCHITECTURE.md#16-bounded-contexts)), not in this entity and not in the
   session. `ViewerTools.Grid` still answers the only question the domain asks: is the grid on.
 - `INV-VIEW-4` — **Every aid persists across poses within a session**, zoom included: nothing is
-  reset when the image changes. `ResetZoom` exists for a screen that wants a per-pose reset, and the
+  reset when the image changes. The starting state is not fixed either: grayscale is seeded at
+  construction from `Settings.GrayscaleMode` (`INV-SET-P*`), so "start in grayscale" is honoured by
+  the entity rather than by a screen toggling a flag once the session is already running. `ResetZoom` exists for a screen that wants a per-pose reset, and the
   player does not call it — see [DDD-ARCHITECTURE.md §20](DDD-ARCHITECTURE.md#20-where-the-code-deviates-today)
   before changing that, because it is a behaviour decision, not an omission.
 
@@ -767,6 +773,16 @@ Changed by #13:
 As with #12, none of this is a change to behaviour: all three shipped, all three are covered by
 `LibraryReferenceTests`, and all three were recorded only in the comments #13 deleted. The
 `INV-REF-*` family already has a §8 enforcement row, so §8 is unchanged.
+
+Changed by #16:
+
+| Rule | Change | Why |
+|---|---|---|
+| `INV-VIEW-2` | **Widened** | It named the bounds without saying that 1.0 *is* fit-to-screen, or why the clamp rounds. Unrounded stepping drifts and a bound is never reached exactly, so the button at that end never disables |
+| `INV-VIEW-4` | **Widened** | It said nothing is reset between poses, which reads as if the starting state were fixed. Grayscale is seeded at construction from `Settings.GrayscaleMode` |
+
+Both shipped, both are covered by `ViewerToolsTests`, and both were recorded only in the comments
+#16 deleted. The `INV-VIEW-*` family already has a §8 enforcement row, so §8 is unchanged.
 
 One behaviour did change, deliberately: when the consecutive-failure budget is exhausted the session
 now banks **no** partial time for the unreadable image it died on. The old `SessionPlayer` routed
