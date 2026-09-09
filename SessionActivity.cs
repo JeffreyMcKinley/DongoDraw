@@ -38,7 +38,6 @@ namespace FigureDrawing
 
         const float BlurRadius = 24f;
 
-        // Well under a second, so the displayed value flips promptly at each boundary (§7).
         const int TickIntervalMs = 200;
 
         const int WideScreenWidthDp = 600;
@@ -114,8 +113,7 @@ namespace FigureDrawing
 
         int prefetchGeneration;
 
-        // In GridStyles order: verticals left to right, then horizontals top to bottom. Applied by
-        // index, so the order is the wiring.
+        // In GridStyles order, and applied by index: the order is the wiring.
         GridLinePainter[] gridPainters = Array.Empty<GridLinePainter>();
 
         GridPalette gridPalette;
@@ -208,8 +206,7 @@ namespace FigureDrawing
             RenderClock();
             StartTicking();
 
-            // The one running path that reaches the prefetch outside Render: a full repaint here
-            // would rebuild the pips and reset the clock cache for nothing.
+            // The one running path that prefetches outside Render: a repaint here would cost more.
             PrefetchUpcoming();
         }
 
@@ -226,7 +223,6 @@ namespace FigureDrawing
                 stage.LayoutChange -= stageLayoutChanged;
             stageLayoutChanged = null;
 
-            // OnCreate can throw before BindViews runs, and an NRE here would mask that failure.
             image?.SetImageDrawable(null);
             ReleaseDisplayed();
 
@@ -366,8 +362,7 @@ namespace FigureDrawing
             session = built;
             sessionReady = true;
 
-            // The constructor started the clock. Backgrounded meanwhile, the first pose would
-            // quietly burn however long the app stayed away.
+            // The constructor already started the clock, and a backgrounded pose would burn it.
             if (!resumed)
                 session.Pause();
 
@@ -468,8 +463,7 @@ namespace FigureDrawing
         // Only the automatic change chimes: whoever tapped Next is already looking at the screen.
         void Chime() => tone?.StartTone(Tone.PropBeep, 120);
 
-        // Called from the tail of every repaint, so it must cost nothing when the upcoming id is
-        // already cached or already in flight.
+        // Called from the tail of every repaint, so it must cost nothing when there is nothing to do.
         void PrefetchUpcoming()
         {
             if (!sessionReady || IsFinishing || IsDestroyed || session.IsPaused)
@@ -560,15 +554,8 @@ namespace FigureDrawing
             ReleasePrefetched();
         }
 
-        // --- Rendering -------------------------------------------------------
-
-        // Full repaint: which of the three states the screen is in (player, error, summary) and
-        // everything inside the current one.
         void Render()
         {
-            // Every caller checks this already; the guard is here because a repaint of a session
-            // that does not exist yet is the failure mode of getting the build wiring wrong, and it
-            // should be a no-op rather than a crash on the first frame.
             if (!sessionReady)
                 return;
 
@@ -584,17 +571,14 @@ namespace FigureDrawing
             summary.Visibility = ViewStates.Gone;
             status.Visibility = ViewStates.Gone;
 
-            // Repoint the view FIRST, then free the pixels the view no longer draws. The reference
-            // check is load-bearing: Render re-runs on every command, pause and pip repaint with the
-            // same bitmap, and recycling the one on screen would blank the pose.
+            // The reference check is load-bearing: Render re-runs with the same bitmap on every
+            // command and pause, and recycling the one on screen would blank the pose (§8).
             if (session.CurrentImage is { } pose && !ReferenceEquals(pose, displayed))
             {
                 image.SetImageBitmap(pose.Bitmap);
                 ReleaseDisplayed();
                 displayed = pose;
 
-                // Once per pose, never per tick. The samples the guides read were computed on the
-                // thread that decoded the image, so this is arithmetic only.
                 ApplyGridColors();
             }
 
@@ -602,15 +586,11 @@ namespace FigureDrawing
 
             var paused = session.IsPaused;
 
-            // The sheet follows the *reason*: a lifecycle pause stops the clocks without covering
-            // the pose, only the drawer's own pause raises it.
             var pausedByUser = session.PausedByUser;
             pauseOverlay.Visibility = pausedByUser ? ViewStates.Visible : ViewStates.Gone;
 
             if (pausedByUser)
             {
-                // Only path that can make the sheet visible, so its text is written here rather than
-                // five times a second in RenderClock.
                 pausedTimer.Text = session.Display;
                 pausedStats.Text = string.Format(
                     GetString(Resource.String.paused_stats_format),
@@ -629,10 +609,8 @@ namespace FigureDrawing
 
             RenderPips();
 
-            // A full repaint rewrites the clock views unconditionally: the cache is keyed on the
-            // string alone, and a phase change can arrive carrying the same one the pose ended on
-            // (a done-tap at 0:15 into a 15 s break), which would otherwise leave the break timer
-            // showing the layout placeholder. Costs one setText per command, not per tick.
+            // The cache is keyed on the string alone, and a phase change can carry the same one the
+            // pose ended on — a done-tap at 0:15 into a 15s break.
             lastDisplay = null;
             RenderClock();
 
@@ -644,31 +622,20 @@ namespace FigureDrawing
             {
                 StartTicking();
 
-                // Decode the next pose while this one is on screen, so the boundary tick attaches a
-                // bitmap instead of decoding one. Costs nothing when the upcoming id is already
-                // cached or already in flight, which is most of the times this line runs.
                 PrefetchUpcoming();
             }
         }
 
-        // Both clocks have stopped, so no boundary is coming: nothing for a decode to beat, and no
-        // reason to hold a full-size bitmap for the length of a pause. The drawer's pause and the
-        // lifecycle's reach here alike — one rule, one path.
-        //
-        // Its own method so the contract tier can pin it: asserted against Render's whole body, this
-        // release is indistinguishable from the one on the completion branch. A block body, not an
-        // expression one — the contract tier's brace matcher reads bodies, not arrows.
+        // Its own method, with a block body, so the contract tier can pin it: inlined it is
+        // indistinguishable from the completion branch's release, and the brace matcher reads bodies.
         void OnClocksStopped()
         {
             CancelPrefetch();
         }
 
-        // The cheap per-tick repaint: only the things that change every 200ms. The countdown string
-        // is second-resolution, so it is written only when it actually changes — setText on these
-        // wrap_content clock views requests a layout pass, and four ticks in five carry no news.
+        // setText on these wrap_content views forces a layout pass — hence the cache below.
         void RenderClock()
         {
-            // ProgressBar.setProgress already no-ops on an unchanged value and never lays out.
             ring.Progress = session.RemainingPercent;
 
             var display = session.Display;
@@ -678,27 +645,19 @@ namespace FigureDrawing
             lastDisplay = display;
             timer.Text = display;
 
-            // The break's own timer gets the tick that entered the break too: Render calls through
-            // here on the phase change, when OnBreak is already true.
             if (session.OnBreak)
                 breakTimer.Text = display;
         }
 
-        // The session is over: either nothing in the pool could be decoded (an error), or it ran to
-        // its end / was ended early (the summary).
         void RenderTerminalState()
         {
             body.Visibility = ViewStates.Gone;
 
-            // Nothing draws the pose from here on. Freeing it now keeps a summary screen from
-            // sitting on a full-size bitmap, and keeps "Run it again" from peaking at two — the new
-            // session decodes its first image inside its constructor.
             image.SetImageDrawable(null);
             ReleaseDisplayed();
 
             if (session.CouldNotDisplayImage)
             {
-                // Every reachable image failed to decode — show the error rather than a blank screen.
                 summary.Visibility = ViewStates.Gone;
                 status.Text = GetString(Resource.String.session_error_text);
                 status.Visibility = ViewStates.Visible;
@@ -714,9 +673,6 @@ namespace FigureDrawing
             summarySkipped.Text = session.SkippedCount.ToString();
         }
 
-        // One segment per pose in the session-progress strip, filled as poses are completed. Weighted
-        // rather than fixed-width so a long session still fits the rail; past MaxPips the segments
-        // would be sub-pixel, so the strip is dropped and the stats line below carries the progress.
         void BuildPips()
         {
             pips.RemoveAllViews();
@@ -744,7 +700,6 @@ namespace FigureDrawing
                 pips.GetChildAt(i)!.Selected = i < session.CompletedCount;
         }
 
-        // Reflect ViewerTools onto the stage: the chips' selected faces and the effects themselves.
         void ApplyTools()
         {
             grayscaleChip.Selected = tools.Grayscale;
@@ -761,11 +716,9 @@ namespace FigureDrawing
 
             grid.Visibility = tools.Grid ? ViewStates.Visible : ViewStates.Gone;
 
-            // Zoom and flip both move where a guide lands on the pose, so its tone is re-resolved
-            // here. This reads the cached samples only — no bitmap work.
+            // Zoom and flip move where a guide lands, so its tone is re-resolved — cached samples only.
             ApplyGridColors();
 
-            // Flip is a negative horizontal scale, so it composes with zoom in one transform.
             var zoom = (float)tools.Zoom;
             image.ScaleX = tools.Flip ? -zoom : zoom;
             image.ScaleY = zoom;
@@ -778,13 +731,11 @@ namespace FigureDrawing
             }
         }
 
-        // Phone: the rail sits under the pose. Fold open / tablet: it becomes a column beside it,
-        // which is also where the session-progress strip earns its space.
         void ApplyRailLayout()
         {
             var wide = Resources!.Configuration!.ScreenWidthDp >= WideScreenWidthDp;
 
-            // Fully qualified: Android.Media and Android.Content.Res both also define an Orientation.
+            // Fully qualified: Android.Media and Android.Content.Res also define an Orientation.
             body.Orientation = wide
                 ? Android.Widget.Orientation.Horizontal
                 : Android.Widget.Orientation.Vertical;
@@ -808,22 +759,13 @@ namespace FigureDrawing
             progressGroup.Visibility = wide ? ViewStates.Visible : ViewStates.Gone;
         }
 
-        // --- Helpers ---------------------------------------------------------
-
-        // Durations read the same everywhere on this screen (m:ss), using the session's own
-        // formatter so the summary and the timer can never disagree about how time is written.
         static string FormatDuration(TimeSpan value) =>
             DrawingSession.Format((int)Math.Round(value.TotalSeconds));
 
-        // Resolve an image id for the session. Called on the main thread only — from the running
-        // session's constructor, and from a tick or a skip by way of the aggregate's own resolve —
-        // which is what lets the one-entry cache be a plain field.
+        // Main thread only — the running constructor, and a tick or skip by way of the aggregate's
+        // own resolve — which is what lets the one-entry cache be a plain field.
         PoseImage? LoadPose(string id)
         {
-            // The prefetch already answered for this id during the pose that has just ended: hand
-            // the answer over and empty the cache, so the boundary tick decodes nothing. A null
-            // entry is an answer too — the file is unreadable, and the session is about to learn
-            // that and remember it for the rest of the run.
             if (prefetchedId == id)
             {
                 var ready = prefetched;
@@ -832,32 +774,17 @@ namespace FigureDrawing
                 return ready;
             }
 
-            // The decode for this id is still running. Waiting for it costs whatever is left of a
-            // decode already in progress; starting a second one costs a whole decode on this thread
-            // AND leaves the first to be thrown away. The Task was made by Task.Run and captured no
-            // synchronization context, so blocking on it here cannot deadlock.
             if (prefetchingId == id && prefetchTask is { } inFlight)
             {
                 prefetchClaimed = true;
                 return inFlight.GetAwaiter().GetResult();
             }
 
-            // Not prefetched at all — the first pose of a run, or the image after one that was
-            // skipped. Nothing to wait for, so decode it here.
             return DecodePose(ContentResolver!, id, CancellationToken.None);
         }
 
-        // Decode a content-uri string into a pose, or null if it is unreadable/broken — the session
-        // treats null as "skip this image". Never throws out to the session.
-        //
-        // Static, and given its resolver rather than reaching for the Activity's: this runs on the
-        // prefetch thread, and an instance property would be a JNI call on a peer that teardown may
-        // be disposing underneath it.
         static PoseImage? DecodePose(ContentResolver resolver, string id, CancellationToken cancelled)
         {
-            // The decode competes with the UI thread for CPU, and a ThreadPool worker starts at
-            // normal priority. Restored in the finally: the thread goes back to the pool and will
-            // serve work that has nothing to do with this screen.
             var priority = Android.OS.Process.GetThreadPriority(Android.OS.Process.MyTid());
 
             try
@@ -875,15 +802,10 @@ namespace FigureDrawing
                 if (bitmap is null)
                     return null;
 
-                // Sampled here rather than in Render: this is the thread that already paid for the
-                // pixels, and doing it on the repaint callback put a scaled copy plus a GetPixels
-                // back onto the UI thread at every pose change.
                 return new PoseImage(bitmap, SampleForGuides(bitmap), bitmap.Width, bitmap.Height);
             }
             catch (Exception ex)
             {
-                // Boundary with the platform (docs/ARCHITECTURE.md §9). The type alone: a provider's
-                // message routinely carries the resolved on-disk path, which must not be logged.
                 Log.Warn(LogTag, $"Failed to decode an image: {ex.GetType().Name}");
                 return null;
             }
@@ -893,9 +815,6 @@ namespace FigureDrawing
             }
         }
 
-        // Free a bitmap this screen decoded and will not show. Recycle then Dispose: a JNI global
-        // ref keeps the pixels alive until a managed GC plus a finalizer pass, far too late at a
-        // session's decode rate (docs/ARCHITECTURE.md §8).
         static void Release(PoseImage? pose)
         {
             if (pose?.Bitmap is not { } bitmap)
@@ -907,19 +826,14 @@ namespace FigureDrawing
             bitmap.Dispose();
         }
 
-        // The screen owns the decoded pose (docs/ARCHITECTURE.md §8: a screen disposes what it owns).
-        // Nulling the field is what keeps the OnDestroy path and the "Run it again" rebuild from
-        // recycling the same bitmap twice.
+        // Nulling the field is what stops OnDestroy and the rebuild recycling the same bitmap
+        // twice; the guide samples travel inside the pose and are dropped with it.
         void ReleaseDisplayed()
         {
-            // The guide samples travel inside the pose, so letting it go drops them with it — a
-            // stale block would colour the next pose's guides from the previous pose's image.
             Release(displayed);
             displayed = null;
         }
 
-        // The screen owns what it decoded ahead just as much as what it is showing: an entry the
-        // session never asks for is freed here rather than left for a finalizer.
         void ReleasePrefetched()
         {
             Release(prefetched);
@@ -934,15 +848,8 @@ namespace FigureDrawing
             return new ColorMatrixColorFilter(matrix);
         }
 
-        // --- Rule-of-thirds guides -------------------------------------------
-
-        // Reduce the pose to a small block of pixels for GridContrast. Filtered scaling makes each
-        // cell a box average of the region it stands for, which is what "the strip of image this
-        // guide crosses" needs. One rescale per pose, on a path that already paid for a full
-        // decode; never on the tick.
-        //
-        // Null means "could not sample" — the guides then fall back to the light style rather than
-        // the screen failing, which is the same outcome as a guide landing on the letterbox bar.
+        // Filtered scaling on purpose: each cell must be a box average of the strip its guide
+        // crosses. Null means "could not sample", and GridContrast falls back to the light style.
         static int[]? SampleForGuides(Bitmap bitmap)
         {
             Bitmap? scaled = null;
@@ -964,7 +871,6 @@ namespace FigureDrawing
             }
             catch (Exception ex)
             {
-                // Boundary with the platform: log it and carry on with the default guides.
                 Log.Warn(LogTag, $"Could not sample the pose for the grid: {ex.GetType().Name}");
                 return null;
             }
@@ -982,15 +888,12 @@ namespace FigureDrawing
             }
         }
 
-        // Re-resolve every guide's tone against the pose as it is currently presented. Cheap enough
-        // to call from a layout change: it is arithmetic over the cached sample block.
         void ApplyGridColors()
         {
             if (gridPainters.Length == 0 || tools is null)
                 return;
 
-            // A null array converts to an empty span, and GridContrast reads that as "no samples"
-            // and falls back — so an unsampled pose, or none at all, needs no branch here.
+            // A null array becomes an empty span, which GridContrast reads as "no samples".
             ReadOnlySpan<int> samples = displayed?.GuideSamples;
 
             var styles = GridContrast.LineStyles(
@@ -1007,13 +910,8 @@ namespace FigureDrawing
             gridPainters[3].Apply(styles.HorizontalBottom);
         }
 
-        // One guide's background: a casing rectangle with the core laid inside it, inset by the
-        // casing width down the guide's two long edges. Two separate layers rather than one stroked
-        // drawable, so the tones stay distinct instead of blending where they meet — both are
-        // translucent, and a casing drawn over the core would just tint it.
-        //
-        // The drawables are built once and recoloured in place, so re-resolving on every zoom step
-        // allocates nothing.
+        // Two layers rather than one stroked drawable: both tones are translucent, so a casing
+        // drawn over the core would tint it instead of staying distinct.
         sealed class GridLinePainter
         {
             readonly GradientDrawable casing = new();
