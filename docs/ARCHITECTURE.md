@@ -247,6 +247,14 @@ follows this or argues why not.
   buys nothing here — nothing on the path is a cancellation-aware API, so every check is an ordinary
   `if` — and costs a disposal puzzle. Anything the abandoned work allocated is freed on that branch:
   cancelling frees nothing by itself, it only says which branch to take.
+- **Re-check inside the loops, not only at the ends.** The generation is taken before the work
+  starts, so work that never reaches its first query still supersedes what is running. It is then
+  re-read per provider query *and per cursor row*, because this app's usual folder is one flat
+  directory of thousands of images: check once per query there and "per query" means "once up
+  front", so an abandoned walk still drains the whole cursor — refilling binder windows and mapping
+  every id — before it can stop. Checking only at the ends has the same shape at a larger scale:
+  rapid stop/start churn leaves several full walks running at once, each blocked on binder I/O
+  against a provider that may be network-backed.
 - Abandon in `OnStop` and `OnDestroy`, and wherever the screen deliberately drops the work it is
   showing (`MainActivity.ResetLibrary`). `OnStop` matters as much as `OnDestroy`: a result landing
   after the screen released its resources would put them straight back.
@@ -325,6 +333,18 @@ follows this or argues why not.
   arrived too late to want. Its steady-state peak is therefore two full-size poses, not one, which
   is part of what the decode bound below is budgeted against. A JNI global ref keeps a Bitmap alive
   until a managed GC plus finalizer pass, which is far too late under a session's decode rate.
+- **Java peers are disposed, not left to a finalizer — and not only the Bitmaps.** Every Java-backed
+  object holds a JNI global ref, and the table is process-wide and capped at 51,200 entries;
+  exhausting it aborts the process rather than failing anything gracefully. The library walk is
+  where this bites: it builds a `Uri` per image found — not per image previewed — and a `Cursor`
+  per folder queried, and it re-runs on every return to the screen. A few thousand undisposed peers
+  per walk reaches that ceiling in ordinary use, so both are disposed at the point they stop being
+  needed. A `Cursor` needs both halves and they are not the same call: `Close()` releases the native
+  window it holds, `Dispose()` releases the managed peer, so the explicit close inside a `using` is
+  not redundant. Freeing decoded previews has a second reason to be prompt: they are released on the thread
+  that decoded them rather than left for the continuation, because the load that superseded this one
+  is decoding at the same time, and holding both sets until the looper drains doubles the peak the
+  preview cap exists to bound.
 - A single unreadable image must never sink the screen: decode failures return `null` and are
   logged, and the session skips past them with a bounded failure budget.
 
