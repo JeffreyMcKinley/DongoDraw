@@ -203,6 +203,11 @@ under test.
   while the current one is up (`PrefetchUpcoming` / `DecodeAhead`). The setup screen reads a
   reference library off it (`LibraryLoader`): the folder walk and up to 24 preview decodes.
   Everything else runs on the main thread.
+- **Everything derived from a pose's pixels is derived on the thread that decoded it.** `PoseImage`
+  carries the decoded bitmap together with what was computed from it — the grid's guide samples, a
+  scaled copy plus a `GetPixels` — precisely so that work does not happen in the repaint callback.
+  Computing them at render time put a scale and a pixel read back on the UI thread at the one moment
+  the pose changes, which is the frame least able to afford it.
 - **One decode at a time per screen.** The prefetch holds a single slot (`prefetchTask`), and a
   request while it is occupied is dropped rather than queued — the slot re-aims itself when the
   decode settles. Without that bound, every command that changes which image is next starts another

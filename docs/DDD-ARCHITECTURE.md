@@ -76,6 +76,14 @@ flags (`INV-VIEW-3`): the screen samples the decoded pose down to a small block 
 pose and asks `GridContrast` which tone each guide takes, and neither the block nor the answer is
 ever session state.
 
+**Totality is `GridContrast`'s contract, not an implementation detail.** Every degenerate input —
+no samples, a span shorter than the grid it claims, a zero-sized stage or image, a non-positive or
+non-finite zoom — returns four light styles rather than throwing. It is called from the render path,
+where an exception is a screen that stops rather than a frame that looks wrong, and the light style
+is the one that reads over `@color/stage`, which is also where a guide lands when the pose is
+letterboxed away from it. A guide with the wrong tone is a bad frame; a guide that throws is a dead
+session.
+
 ### Context map
 
 ```
