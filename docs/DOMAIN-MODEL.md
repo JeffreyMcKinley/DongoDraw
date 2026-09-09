@@ -440,6 +440,10 @@ Reading a run query off a draft is legal and meaningless — the phase says whic
   the full configured duration (`INV-POSE-2`, `INV-POSE-3`).
 - `INV-CD-7` — **It renders text, not views.** The session produces a string; the screen owns the
   repaint loop and the `TextView`.
+**A finished session's clock is stopped, not merely ignored.** Completing stops the pose clock as
+well as the sequence, so the countdown is not still draining behind the summary the artist is
+reading. Not given an invariant id: §8 requires a named test for one, and no test asserts it
+directly today — `UserPause_AfterCompletion_IsANoOp` covers the commands, not the clock.
 - `INV-CD-8` — **A pause remembers why.** `Pause(PauseReason.User)` is the drawer's own pause and
   survives a lifecycle pause/resume cycle; only an explicit `Resume` clears it (`PausedByUser`). The
   screen binds the pause sheet to that, not to `IsPaused`, so backgrounding never resumes a pose the
@@ -469,6 +473,13 @@ Reading a run query off a draft is legal and meaningless — the phase says whic
   counts anything. Refilling a drained pass is the one mutation it is allowed — a pass is
   materialised whole, so the resulting sequence is identical either way. Stated as an exception
   because `INV-SES-1` and `INV-X-12` otherwise forbid a query that mutates.
+
+  It answers null exactly when the session is over, was degenerate to begin with, or has nothing
+  drawable left to name — and a pass whose every remaining id is already known unreadable answers
+  null rather than refilling again, since the next pass is drawn from the same pool and would say
+  the same thing. Deliberately *not* "null once no further pose will be shown": with `Remaining` at
+  1 a skip still lands on another image, and teaching the peek that rule is how it and the counters
+  become interdependent.
 - `INV-PLY-8` — **An unreadable image is not loaded twice in one session.** Once the loader has
   reported an id unreadable, later passes skip it without a second load attempt. It still travels
   the skip path and still counts against the budget (`INV-PLY-2`, `INV-PLY-3`) — only the load is
@@ -848,6 +859,16 @@ Changed by #19:
 
 The rule shipped and is covered by `LibraryLoadStateTests`; it was recorded only in
 `LibraryLoadState.cs`. `INV-X-13` already has a §8 enforcement row, so §8 is unchanged.
+
+Changed by #15:
+
+| Rule | Change | Why |
+|---|---|---|
+| `INV-PLY-7` | **Widened** | It said what the peek may do without saying when it answers null, or that the boundary is deliberately drawn short of "no further pose will be shown" — coupling the peek to the counters is the thing being avoided |
+| §4.1 card | **One sentence added** | Completing stops the pose clock as well as the sequence. Nothing said so, and "the countdown keeps draining behind the summary" is the bug it prevents. A card sentence rather than an invariant id, because §8 requires a named test for an id and #15 may not add one |
+
+Both shipped and were recorded only in the comments #15 deleted. No invariant id is added, so §8
+is unchanged.
 
 One behaviour did change, deliberately: when the consecutive-failure budget is exhausted the session
 now banks **no** partial time for the unreadable image it died on. The old `SessionPlayer` routed
