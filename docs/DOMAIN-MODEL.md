@@ -571,7 +571,16 @@ dropping the write — losing preferences quietly is worse than failing loudly.
   stored value usable at all is `LibraryReference` (`INV-REF-1`..`INV-REF-3`), not the screen's
   judgement.
 - `INV-SET-P6` — **Losing it is survivable.** A deleted or corrupt database costs preferences and
-  nothing else; the app must start with defaults.
+  nothing else; the app must start with defaults. Discarding one means discarding the write-ahead
+  log beside it (`<name>-log<ext>`) in the same breath: LiteDB folds that log back in on open, so a
+  log left behind by a process kill — or carried in by a device restore, written by an install that
+  is not this one — is recovered into the fresh database, and a document nobody here wrote is
+  deserialized as if it were ours. Delete both or neither.
+
+  That a database *was* discarded is worth reporting: `Settings.Discarded` says so. It is static
+  because it describes the file rather than the document, and the document it would otherwise live
+  on is precisely the one that was thrown away. A preference set that quietly resets itself is
+  invisible in a bug report unless something says it happened.
 
 **Rules — the store**
 
@@ -810,6 +819,16 @@ Changed by #16:
 
 Both shipped, both are covered by `ViewerToolsTests`, and both were recorded only in the comments
 #16 deleted. The `INV-VIEW-*` family already has a §8 enforcement row, so §8 is unchanged.
+
+Changed by #17:
+
+| Rule | Change | Why |
+|---|---|---|
+| `INV-SET-P6` | **Widened** | It said losing the database is survivable without saying what discarding one has to delete. The write-ahead log goes with the datafile, because a log left by a kill — or carried in by a device restore — is folded back into the fresh database on open. It also now names `Settings.Discarded` and why that flag is static |
+
+Both halves shipped and are covered by `SettingsTests`; neither was written down outside
+`Settings.cs`. The `INV-SET-P*` / `INV-STO-*` families already have §8 enforcement rows, so §8 is
+unchanged.
 
 One behaviour did change, deliberately: when the consecutive-failure budget is exhausted the session
 now banks **no** partial time for the unreadable image it died on. The old `SessionPlayer` routed
