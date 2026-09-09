@@ -320,16 +320,9 @@ namespace FigureDrawing
             stage.LayoutChange += stageLayoutChanged;
         }
 
-        // Builds (or rebuilds, for "Run it again") a session from the extras this screen was started
-        // with. The build happens off the UI thread: the running constructor positions itself on the
-        // first displayable image before it returns (INV-PLY-6), and doing that means decoding — a
-        // two-pass open plus a multi-megabyte decode, and more than one of those if the first files
-        // it reaches are unreadable. On this thread that is a stalled launch and, on a slow provider,
-        // an ANR before the screen has drawn anything.
         void StartSession()
         {
-            // Whatever the previous run decoded belongs to the previous run. Dropped before the new
-            // one starts, or the peak is two full-size poses at once.
+            // Before the new run starts, or the rebuild peaks at two full-size poses.
             CancelPrefetch();
             sessionReady = false;
 
@@ -340,8 +333,6 @@ namespace FigureDrawing
             BuildSession(++buildGeneration);
         }
 
-        // The build itself. Nothing here touches a view: the session is constructed on a pool thread
-        // and published on the main one, and only the publish half may look at the screen.
         async void BuildSession(int generation)
         {
             try
@@ -354,30 +345,18 @@ namespace FigureDrawing
                     shuffle,
                     onUnreadable: id => Log.Warn(LogTag, $"Skipping unreadable image {id}"),
 
-                    // Explicit rather than the aggregate's default (INV-PLY-3). Twice the pool means
-                    // a run this long cannot happen unless every id in it is unreadable, even when
-                    // the run spans a pass boundary, so the error screen never appears while a
-                    // drawable image remains. Repeats after the first pass cost no decode
-                    // (INV-PLY-8), and the pool is itself bounded by the session's length
-                    // (INV-POOL-6), so this scales with the run rather than with the folder.
                     maxConsecutiveFailures: pool.Length * 2));
 
                 PublishSession(built, generation);
             }
             catch (Exception ex)
             {
-                // Nothing above may throw out of an async void method: the exception would land on
-                // the main looper with no catch above it and take the process down (INV-X-11).
                 Log.Error(LogTag, $"Building the session failed: {ex}");
             }
         }
 
-        // Back on the main thread with a built session. Everything that decides whether it is still
-        // wanted lives here, on one thread, so there is nothing to synchronise.
         void PublishSession(DrawingSession<PoseImage> built, int generation)
         {
-            // Superseded by a later build, or the screen went away while this one ran: the pose it
-            // decoded has no owner, so it is freed here rather than left to a finalizer.
             if (generation != buildGeneration || IsFinishing || IsDestroyed)
             {
                 Release(built.CurrentImage);
@@ -387,8 +366,8 @@ namespace FigureDrawing
             session = built;
             sessionReady = true;
 
-            // The clock started when the constructor ran. If the screen was backgrounded meanwhile,
-            // stop it now — otherwise the first pose quietly burns however long the app stays away.
+            // The constructor started the clock. Backgrounded meanwhile, the first pose would
+            // quietly burn however long the app stayed away.
             if (!resumed)
                 session.Pause();
 
@@ -397,8 +376,6 @@ namespace FigureDrawing
             Render();
         }
 
-        // What the stage shows while a session is being built. The status line already exists for
-        // the "could not display" case; this is the same one view saying something briefer.
         void RenderBuildingState()
         {
             body.Visibility = ViewStates.Visible;
@@ -413,14 +390,8 @@ namespace FigureDrawing
             ReleaseDisplayed();
         }
 
-        // --- Commands --------------------------------------------------------
-
-        // Every pose command goes through here: run it on the Core aggregate, then repaint. The
-        // aggregate is what decides whether the command counted, started a break, or ended the run.
         void Command(Action command)
         {
-            // A tap that lands while the session is still being built has nothing to command; the
-            // loading state is on screen and the rail's buttons are not yet meaningful.
             if (!sessionReady)
                 return;
 
@@ -453,17 +424,11 @@ namespace FigureDrawing
             ApplyTools();
         }
 
-        // --- Repaint loop ----------------------------------------------------
-
-        // Refresh the displayed time and let the aggregate expire the current phase. Bails the
-        // instant the activity is tearing down so a queued Tick can never touch a dead view.
         void Tick()
         {
             if (!ticking || !sessionReady || IsFinishing || IsDestroyed)
                 return;
 
-            // What changed is the session's answer, not this screen's to work out: a rest starting is
-            // not a new pose, and the tick that ends the run is not one either.
             switch (session.Tick())
             {
                 case SessionTick.PoseStarted:
@@ -494,39 +459,28 @@ namespace FigureDrawing
             ticker.PostDelayed(tickRunnable, TickIntervalMs);
         }
 
-        // Stop AND drop any already-queued repaint, so nothing fires after we've torn down.
         void StopTicking()
         {
             ticking = false;
             ticker.RemoveCallbacks(tickRunnable);
         }
 
-        // A short tone when the pose changes on its own. Only the automatic change chimes: a drawer
-        // who tapped Next or Skip is already looking at the screen. Reached only from the
-        // PoseStarted arm, so completion no longer needs guarding here.
+        // Only the automatic change chimes: whoever tapped Next is already looking at the screen.
         void Chime() => tone?.StartTone(Tone.PropBeep, 120);
 
-        // --- Decoding the next pose ahead of the boundary --------------------
-
-        // Start decoding the image after the one on screen, if that is worth doing. Idempotent by
-        // design: this is called from the tail of every repaint, so it must cost nothing when the
-        // upcoming id is already cached or already being decoded.
+        // Called from the tail of every repaint, so it must cost nothing when the upcoming id is
+        // already cached or already in flight.
         void PrefetchUpcoming()
         {
             if (!sessionReady || IsFinishing || IsDestroyed || session.IsPaused)
                 return;
 
-            // One slot. A decode is already running, so this call does nothing but note that the
-            // answer may be for the wrong id — DecodeAhead re-enters here once it settles, and picks
-            // up whatever is next by then. Without this, every command that changes the upcoming id
-            // would start another decode and a handful of quick taps would run several at once.
             if (prefetchTask is not null)
                 return;
 
             var id = session.UpcomingImageId;
             if (id is null)
             {
-                // Nothing drawable follows this pose, so anything cached can never be consumed.
                 ReleasePrefetched();
                 return;
             }
@@ -534,8 +488,7 @@ namespace FigureDrawing
             if (id == prefetchedId)
                 return;
 
-            // The cache answers for an image that is no longer next: a boundary consumed that id
-            // while the decode was still running, so the answer landed too late to use.
+            // The cached answer landed too late: a boundary consumed that id while it decoded.
             ReleasePrefetched();
 
             var generation = ++prefetchGeneration;
@@ -551,17 +504,8 @@ namespace FigureDrawing
             DecodeAhead(id, generation, prefetchTask);
         }
 
-        // Settles one prefetch (docs/ARCHITECTURE.md §7). Returns void rather than a Task because
-        // nothing awaits it: it is started from a repaint and its only result is a field.
-        //
-        // No ConfigureAwait(false) anywhere here: the continuation MUST come back to the main
-        // thread. Android's synchronization context posts it to the main looper, which is also the
-        // barrier that publishes the decoded pixels to the thread that will attach them.
         async void DecodeAhead(string id, int generation, Task<PoseImage?> work)
         {
-            // The whole body is guarded, not just the await: everything after it is a JNI call on a
-            // peer that teardown may already have disposed, and an exception escaping an async void
-            // lands on the main looper with nothing above it to catch it (INV-X-11).
             try
             {
                 PoseImage? pose = null;
@@ -572,14 +516,13 @@ namespace FigureDrawing
                 }
                 catch (OperationCanceledException)
                 {
-                    // Abandoned before it started. Nothing was decoded, so there is nothing to free.
+                    // Abandoned before it started, so nothing was decoded and nothing needs freeing.
                 }
                 catch (Exception ex)
                 {
                     Log.Warn(LogTag, $"Could not decode ahead: {ex.GetType().Name}");
                 }
 
-                // The slot is free from here, whatever happens to the result.
                 prefetchTask = null;
                 prefetchingId = null;
                 prefetchCancel?.Dispose();
@@ -587,15 +530,10 @@ namespace FigureDrawing
 
                 if (prefetchClaimed)
                 {
-                    // The boundary arrived first and took this straight off the Task, so the session
-                    // owns it now. Releasing or caching it here would make that two owners.
                     prefetchClaimed = false;
                 }
                 else if (generation != prefetchGeneration || IsFinishing || IsDestroyed)
                 {
-                    // A decode cannot be stopped once it is running, so this is where an abandoned
-                    // prefetch is settled: the screen took a different turn while this ran, and the
-                    // pixels it produced belong to nobody.
                     Release(pose);
                 }
                 else
@@ -604,8 +542,6 @@ namespace FigureDrawing
                     prefetched = pose;
                 }
 
-                // Whatever happened, the one slot is free again — re-aim it at whatever is actually
-                // next now, which is how a boundary that overtook this decode gets covered.
                 PrefetchUpcoming();
             }
             catch (Exception ex)
@@ -614,22 +550,13 @@ namespace FigureDrawing
             }
         }
 
-        // Give up on whatever the prefetch was doing and free whatever it produced. "Cancel" is the
-        // intent, not the mechanism: a decode already running cannot be stopped, so what this does
-        // is make sure its result is thrown away rather than cached. Idempotent, and called on every
-        // way out of this screen — a prefetch that outlived the screen is the leak this trades the
-        // boundary stall for if it is ever missed.
         void CancelPrefetch()
         {
             prefetchGeneration++;
 
-            // Stops a decode that has not started, and lets a running one give up before it
-            // allocates. Not disposed here — the continuation owns that, and it still has to run.
+            // Not disposed here: the continuation owns that, and it still has to run.
             prefetchCancel?.Cancel();
 
-            // `prefetchTask` and `prefetchingId` are deliberately left alone: the work is still
-            // running, and clearing the slot here would let the next Render start a second decode
-            // alongside it. The continuation clears them when it settles.
             ReleasePrefetched();
         }
 
