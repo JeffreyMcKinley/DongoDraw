@@ -168,12 +168,12 @@ under test.
 - **Persisted state** is the single `Settings` LiteDB document. It seeds the setup inputs on launch
   and records the last folder — which is both what a launch restores and where the picker reopens
   (`MainActivity.RememberedTree` / `LastPickedDocumentUri`). It is written where each value
-  changes (for folder picks, only after a successful load) and again in `OnPause` (which first
-  captures the typed inputs, the only values living nowhere else), since a swipe off the recents
-  list never reaches `OnDestroy`. `Settings.Save`
-  checkpoints, so a value that has been saved is in the datafile rather than only in the
-  write-ahead log — see §6. `Android.Provider` also declares a `Settings`, so `MainActivity`
-  carries a `using Settings = FigureDrawing.Data.Settings;` alias.
+  changes (for folder picks, only once the tree's document id resolves — see `INV-SET-P4`) and again
+  in `OnPause` (which first captures the typed inputs, the only values living nowhere else), since a
+  swipe off the recents list never reaches `OnDestroy`. `Settings.Save` checkpoints, so a value that
+  has been saved is in the datafile rather than only in the write-ahead log — see §6.
+  `Android.Provider` also declares a `Settings`, so `MainActivity` carries a
+  `using Settings = FigureDrawing.Data.Settings;` alias.
 - **(confirm)** Session state is *not* currently saved in `OnSaveInstanceState`, so process death
   restarts the pose. That is a known gap, not a pattern to copy. `SessionActivity` mitigates the
   common case by declaring `ConfigurationChanges` for size/orientation and re-laying out in place,
@@ -312,7 +312,12 @@ follows this or argues why not.
   for a preview tile — whatever the aspect ratio is. Power-of-two sampling is what leaves the 2x
   slop, so budget from twice the nominal dimension (a 4000x4000 photo decodes to 2000x2000); a
   12000x900 panorama decodes at 1500x112 rather than at full width. Never decode unsampled — a
-  folder of real photos will exhaust memory.
+  folder of real photos will exhaust memory. The preview ceiling is twice its crop floor rather
+  than the pose's 1080 for that same slop reason: at 1080 an aspect-extreme source — a 2000x700
+  scan — still decodes at full size into a 360 px tile, and the grid holds up to
+  `MainActivity.MaxThumbnails` (24) of them at once, which is the product that bounds the grid's
+  worst case. At 720 the same file samples to 1000x350, a 3% upscale inside a centre-cropped tile
+  and a quarter of the heap.
 - **The reference grid's previews are released in `OnStop` and rebuilt in `OnStart`**, not held to
   `OnDestroy`. `MainActivity` is *stopped*, not destroyed, while `SessionActivity` runs, so previews
   held any longer would sit under every session and the app's real peak would be the grid plus the
@@ -339,14 +344,32 @@ follows this or argues why not.
   where this bites: it builds a `Uri` per image found — not per image previewed — and a `Cursor`
   per folder queried, and it re-runs on every return to the screen. A few thousand undisposed peers
   per walk reaches that ceiling in ordinary use, so both are disposed at the point they stop being
-  needed. A `Cursor` needs both halves and they are not the same call: `Close()` releases the native
+  needed. The grid's own views are the second case and the one that reaches furthest: an undisposed
+  `ImageView` (and its `LayoutParameters`) keeps its Java `View` alive, and through it this Activity,
+  until a managed GC plus finalizer pass. That cost nothing while the grid was built once per
+  launch; it is now rebuilt on every return to the screen.
+  A `Cursor` needs both halves and they are not the same call: `Close()` releases the native
   window it holds, `Dispose()` releases the managed peer, so the explicit close inside a `using` is
   not redundant. Freeing decoded previews has a second reason to be prompt: they are released on the thread
   that decoded them rather than left for the continuation, because the load that superseded this one
   is decoding at the same time, and holding both sets until the looper drains doubles the peak the
   preview cap exists to bound.
+- **Capture a peer before detaching what holds it.** A managed peer is a handle onto a Java
+  object, not the object itself, so reading `view.Drawable` again after `SetImageDrawable(null)` can
+  hand back a *different* peer — or none — for pixels that are still allocated. The bitmap to
+  recycle is therefore taken from the drawable before the view lets go of it, and that
+  `BitmapDrawable` is disposed alongside the pixels it wrapped, since it holds a global ref of its
+  own. A `Drawable` getter hands back a peer whether or not the type test that follows succeeds, so
+  narrowing with `as` is safe only where the setter is known — in the grid's case
+  `SetImageBitmap`, and nothing else.
 - A single unreadable image must never sink the screen: decode failures return `null` and are
-  logged, and the session skips past them with a bounded failure budget.
+  logged, and the session skips past them with a bounded failure budget. The same holds one step
+  later — a preview that will not *attach*, an out-of-memory on the view rather than on the decode,
+  costs that tile and nothing else.
+- **A screen that resets renders whole.** Where a folder fails to open, every surface describing the
+  pool moves together: grid, count, empty caption, pool card and the Start gate. Resetting some of
+  them leaves a blank grid under a header still reporting the previous folder's count, with Start
+  still armed over a pool the artist has just been told is gone.
 
 ## 9. Errors and logging
 
@@ -355,6 +378,23 @@ follows this or argues why not.
   picker, image decoding, building a picker hint from a persisted tree URI — is wrapped in
   `try`/`catch`, logged, and turned into a visible message rather than a crash.
   `MainActivity.OnActivityResult` is the reference example.
+- **A boundary call is materialised before it returns, never yielded.** A method that hands back the
+  platform's answer as a lazy `IEnumerable` runs its Binder call wherever the sequence happens to be
+  enumerated, which is outside the `try` written to contain it: the guard compiles, reads correctly,
+  and catches nothing. Build the list eagerly, so the call happens where the caller's guard can see
+  it — `MainActivity.PersistedGrants` does, disposing each `UriPermission` and its `Uri` as it goes.
+  Materialising is only half of it: the guard still has to exist on every path that reaches the
+  call, which is a per-call-site obligation and not something the shape of the method can enforce.
+- **A failure that costs the artist nothing is logged, not shown.** The visible-message rule above
+  is for work the artist asked for. A best-effort platform call whose failure changes nothing they
+  can see — handing back a superseded URI grant, refreshing one already held — is logged and passed
+  over; surfacing it would report a problem that does not exist.
+- **At the provider boundary, log a failure's type and message, never the exception object.** A SAF
+  failure's `ToString` and stack can carry provider-side absolute paths and the document ids of files
+  *inside* the artist's folder, which is more than the content URI the rule below permits. The shape
+  is `GetType().Name` plus `Message`; an overload taking the `Throwable` is not. This is narrower
+  than the other bullets here on purpose — a failure that cannot name the artist's files (a failed
+  settings write, a screen that would not launch) may log the exception whole, and several do.
 - Catching broad `Exception` is acceptable at those boundaries, and only there. Elsewhere, catch the
   specific type or let it throw.
 - Never log image contents or full user file paths beyond the content URI already logged.

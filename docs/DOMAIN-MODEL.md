@@ -276,6 +276,13 @@ is to hold the string, not to know what makes one usable (§5.1).
   in the platform's own spelling, not in the canonical form `INV-REF-2` compares over: canonicalising
   is how two round-trips are recognised as one folder, but the string that *identifies* a grant to
   the platform is the one the platform reported.
+
+  The other half of living with that cap is **refreshing the grant that is still wanted**: re-taking
+  a grant already held is a no-op that renews it, which is what keeps a folder in daily use off the
+  platform's trim list. It is best effort, and deliberately independent of the walk in both
+  directions — the grant can be trimmed between the check and the re-take, so a refresh that fails
+  must not cost a library that then loads perfectly well, and a walk that fails must not skip the
+  refresh.
 - `INV-REF-5` — **Four states, four things to say.** `NeverPicked`, `Unavailable`, `Empty`, `Ready`.
   The screen maps them to messages; it does not decide them. Collapsing `Unavailable` into
   `NeverPicked` is what makes a revoked permission read as "the app forgot my folder". A listed
@@ -571,11 +578,22 @@ dropping the write — losing preferences quietly is worse than failing loudly.
 - `INV-SET-P3` — **Settings seed, they do not control.** Values are copied into the setup screen on
   launch and into intent extras on Start. Neither a session nor the setup logic reads settings at
   runtime.
-- `INV-SET-P4` — **Written at named moments only** — a folder was picked and loaded successfully,
+- `INV-SET-P4` — **Written at named moments only** — a folder was picked and proved openable,
   Start was pressed, a settings toggle was flipped, a break preset was tapped, the screen was left
   (`OnPause`). Never on a keystroke, and never from a background thread. Leaving the screen is the
   backstop for how apps actually end: swiped off the recents list or reclaimed while backgrounded,
-  neither of which runs `OnDestroy`.
+  neither of which runs `OnDestroy`. A draft that yields no config leaves the stored values
+  untouched rather than clearing them — unparseable, not strictly positive, or no folder picked yet,
+  since startability is what produces a config at all (`INV-SET-5`).
+
+  **"Openable" is established synchronously, and is not "loaded successfully".** The walk is
+  asynchronous, so waiting on it would put a continuation between picking a folder and its being
+  durable; the gate is instead the tree's document id resolving, which is the step that actually
+  fails for a folder that cannot be opened and throws before anything is written. The persistence
+  chain therefore contains no `await` — pinned by `CrossActivityContractTests` — and that is the
+  property being protected. What it narrows: a folder that opens but holds nothing is still
+  remembered, which `INV-GRP-4` already calls legitimate, and a walk that fails later shows
+  `Unavailable` against a reference the artist can still see and re-pick (`INV-REF-5`).
 - `INV-SET-P5` — **`LastCollection` holds a library reference, not its contents** (`INV-GRP-1`),
   and a stale one is expected (`INV-GRP-5`). The reference is what a launch restores *and* where
   the picker reopens — pointing the picker needs no grant, restoring the library does. What makes a
@@ -587,6 +605,11 @@ dropping the write — losing preferences quietly is worse than failing loudly.
   log left behind by a process kill — or carried in by a device restore, written by an install that
   is not this one — is recovered into the fresh database, and a document nobody here wrote is
   deserialized as if it were ours. Delete both or neither.
+
+  A save that fails on the way out is the same trade seen from the other side: it is logged and
+  swallowed, because losing a preference is survivable and crashing the screen during teardown is
+  not. That is a teardown-path exception only — `ARCHITECTURE.md` §6's rule that a disposed instance
+  throws rather than dropping a write silently is unchanged.
 
   That a database *was* discarded is worth reporting: `Settings.Discarded` says so. It is static
   because it describes the file rather than the document, and the document it would otherwise live
@@ -693,6 +716,11 @@ These bind the objects together and are the ones most easily broken by a plausib
   for one would caption it "no images found", telling the artist a folder they cannot open is empty
   (`INV-REF-5` keeps `Unavailable` and `Empty` apart for exactly this reason).
 
+  A pool is **replaced whole, never mixed**. The loader builds a fresh `ReferenceLibrary` on its
+  worker and the screen swaps it in on the main thread, so no reader ever sees a half-built pool.
+  The pool a re-walk keeps is the previous *complete* one, which is what lets a return from a
+  session leave Start armed for the length of the walk instead of greying it out.
+
 **Consolidation**
 
 - `INV-X-12` — Merging objects never merges responsibilities. A rule that was enforced in one place
@@ -797,7 +825,7 @@ Changed by #8:
 
 | Rule | Change | Why |
 |---|---|---|
-| `INV-SET-P4` | **Tightened** | Save deferred past a successful load; a folder that fails to load is no longer persisted (#8) |
+| `INV-SET-P4` | **Tightened** | Save deferred past a successful load; a folder that fails to load is no longer persisted (#8). *Corrected by #20: the save has never waited on the walk — #4 made it asynchronous in the same breath — and the real gate is the tree document id resolving, synchronously* |
 
 Changed by #12:
 
@@ -881,6 +909,34 @@ against `INV-PLY-2`.
 | `ReferenceLibrary` | `FolderImageEnumerator` (static) + the tree URI and a `List<string>` held loose in `MainActivity` | `ReferenceLibrary.cs`, holding root id, display name and pool, with `IDocumentTree` / `DocumentEntry` alongside it |
 | `DrawingSession<TImage>` | `PoseSession<TImage>` composing `DrawingSession` + `SessionPlayer<TImage>` + `PoseCountdown`, with `SessionSummary` as a projection | `Session/DrawingSession.cs`: one aggregate, the other four as private state and queries, plus the non-generic `DrawingSession.Format` |
 | `Settings` | `AppSettings` + `SettingsStore : IDisposable` | `Data/Settings.cs`: one type with `Open` / `Save` / `Dispose` |
+
+Changed by #20:
+
+| Rule | Change | Why |
+|---|---|---|
+| `INV-SET-P4` | **Corrected** | It said the folder is written once it "loaded successfully". The walk has been asynchronous since #4 and the save has never waited on it. The real gate is the tree's document id resolving, synchronously, which is what keeps an `await` out of the persistence chain |
+| `INV-SET-P4` | **Widened** | An unparseable draft leaves the stored value untouched. It followed from `INV-SET-5` plus the code but was stated only in a comment |
+| `INV-SET-P6` | **Widened** | It covered a lost or corrupt database, not a `Save()` that throws during teardown, where `ARCHITECTURE.md` §6 states the opposite emphasis |
+| `INV-REF-4` | **Widened** | It covered releasing superseded grants but not refreshing the one still wanted, which is the other half of living with the same cap, and not that the refresh is best effort in both directions |
+| `INV-X-13` | **Widened** | "Replaced whole, never a mixture" existed only as a parenthetical in the §8 enforcement row, and the reason the artist can see it — Start staying armed across a re-walk — nowhere |
+
+All five shipped. Four were recorded only in the comments #20 deleted; `INV-X-13`'s clause also
+survived as a parenthetical in the §8 enforcement row. No invariant id is added, so §8 is otherwise
+unchanged.
+
+Android-layer rules went to `ARCHITECTURE.md` rather than here, being platform traps rather than
+domain rules — one correction and eight additions:
+
+- §5's persistence bullet, corrected in the same breath as `INV-SET-P4`
+- §8 — why the preview ceiling is twice its crop floor rather than the pose's, and the tile count
+  that bounds the grid's worst case
+- §8 — an undisposed `ImageView` keeps its Java `View`, and through it the Activity
+- §8 — capture a peer before detaching what holds it
+- §8 — a preview that will not *attach* costs that tile and nothing else
+- §8 — a screen that resets renders whole
+- §9 — materialise a boundary call before returning it, so the caller's guard can contain it
+- §9 — a failure that costs the artist nothing is logged, not shown
+- §9 — at the provider boundary, log a failure's type and message, never the exception object
 
 Three consequences worth knowing before the next change:
 
