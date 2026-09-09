@@ -972,6 +972,32 @@ file named an invariant id. Two were already covered by a family row — `INV-SE
 banner. §8 now carries it, along with a row for the two rendering suites, which the table had never
 named.
 
+Changed by #23:
+
+No invariant is added or amended, and no enforcement row either. #23 was specified as an automated
+guard on #11's diet — a contract test failing any production file over a comment-density budget — and
+it was built, run red-then-green, and then **rejected**. The rule it was meant to carry now lives in
+`CLAUDE.md` and the `code-quality-reviewer` agent instead.
+
+The measurement stands and is worth keeping: fifteen production files carry 135 comment lines in
+3,290, 4.1% overall, and `max(5% of a file's lines, 2 lines)` is the threshold that fits them with no
+exemption list. A flat 5% fails `PoseImage` (2 in 25) and `LoadGeneration` (1 in 13), where the
+percentage rounds below the keep-list's own minimum; a flat 8% would let the three largest files
+regain 85 comment lines before firing.
+
+Two things killed the test. The first is that **it could not pass its own rule**: 79 comment lines in
+253, six times the budget it enforced, and green only because it exempted the project it lived in. A
+guard that exempts itself teaches people the rule is negotiable, and the exemption was not
+incidental — CLAUDE.md mandates a why-comment above every test, so no test file can ever satisfy a
+density cap.
+
+The second is that it measured the wrong thing. A comment that is wrong, stale, or contradicts the
+code passes a volume budget, and that is the defect the reviews of #20 and #21 actually found —
+nineteen times, every one of them in a comment those tickets *rewrote* rather than deleted.
+`SourceContract` blanks comments before the contract tier reads anything, by design, so no test in
+this repo can see comment content at all. Volume was the only thing testable, and it was not the
+thing that needed catching.
+
 Three consequences worth knowing before the next change:
 
 - **The draft is a session, so `Evaluate` is generic.** `MainActivity` calls

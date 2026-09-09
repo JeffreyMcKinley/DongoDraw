@@ -34,9 +34,10 @@ Read surrounding context from unchanged files as needed, but do not report findi
   belongs in a Core type
 - Identify overly complex logic that could be simplified
 - Verify proper separation of concerns
-- Check comment intent: comments here explain *why* a rule exists (the surrounding code is dense
-  with them). A comment restating the code is noise; deleting a comment that records a decision is
-  a regression
+- Check comments against the rules in the **Comments** section below. This is a first-class review
+  responsibility here, not a style note: #11 removed about 1,900 comment lines from production
+  source, and no test can protect that — `SourceContract` blanks comments before the contract tier
+  reads anything, so comment defects are invisible to every tier in this repo
 
 **Error Handling & Edge Cases**
 
@@ -49,7 +50,6 @@ Read surrounding context from unchanged files as needed, but do not report findi
 **Readability & Maintainability**
 
 - Evaluate code structure and organization
-- Check for appropriate comments (no restating obvious code)
 - Assess clarity of control flow
 - Identify magic numbers or strings that should be constants
 - Verify consistent style with surrounding code
@@ -211,7 +211,48 @@ domain service, port) decides which of these apply.
 - Verify security considerations (input sanitization, sensitive data handling)
 - Confirm invariants keep their tests: a new or changed rule in `docs/DOMAIN-MODEL.md` terms needs
   a named unit test, and a deleted invariant needs to be acknowledged rather than dropped quietly
-- Check for excessive comments. If something needs a lot of comments to explain it, it is probably too complex. Refactor for clarity instead of commenting around complexity.
+
+**Comments**
+
+`CLAUDE.md` is authoritative; this is how to apply it to a diff. Report a comment finding with the
+same weight as a code finding.
+
+*Report as a finding — an added or surviving comment that:*
+
+- Restates the code beside it, or a signature above it
+- Is a section-divider banner (`// --- Rendering ---`)
+- Argues where a type lives, or records a design history — that belongs in
+  `docs/DDD-ARCHITECTURE.md` §16/§20
+- States a rule already carried by `docs/DOMAIN-MODEL.md` under an invariant id or by
+  `docs/ARCHITECTURE.md` under a section. **Look it up before reporting the opposite** — §7 and §8
+  in particular already carry most of what an Activity is tempted to explain, including threading,
+  abandonment, bitmap ownership and JNI peer disposal
+- Runs longer than two lines, or adds prose to a per-member enum or record field
+
+*Do not report, and treat deleting one as the finding instead:*
+
+- A non-obvious *why* a plausible edit would silently re-break, living nowhere else
+- A platform trap a reader cannot infer — SAF grant flags, an API-level guard, peer disposal order
+- A `#pragma warning disable` justification
+- The why-comment above a test, with its invariant id (`CLAUDE.md` mandates these; they are never
+  a density problem)
+
+*The rule that is easiest to miss:* if a change **deletes** a comment stating a real rule, check
+that the rule is in `docs/DOMAIN-MODEL.md` or `docs/ARCHITECTURE.md` **before** the deletion is
+acceptable. A rule that lives nowhere else must be added to the doc in the same change. Losing it
+quietly is an Important finding.
+
+*Rewrites deserve more scrutiny than deletions.* Nineteen comment defects were found in review of
+#20 and #21 and **every one was in a comment that was shortened rather than removed** — a fact
+inverted, a pronoun whose antecedent had been deleted, a claim narrowed to half of what the code
+does or broadened past it. When a diff compresses a comment, read the new text against the code as
+carefully as you would read a code change, and check that any invariant id it still cites actually
+carries the rule claimed.
+
+*Density is a smell, not a gate.* A production file over `max(5% of its lines, 2 lines)` of comment
+lines is worth a second look; production source currently sits at about 4% overall. Do not report a
+file for being over the number alone — report the specific comments that should not be there. Test
+projects are exempt by construction, since a why-comment above every test is mandatory.
 
 **Review Structure**
 
