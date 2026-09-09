@@ -153,8 +153,6 @@ namespace FigureDrawing
             keepAwake = Intent?.GetBooleanExtra(ExtraKeepAwake, true) ?? true;
             chime = Intent?.GetBooleanExtra(ExtraChime, false) ?? false;
 
-            // Keep the screen awake for the whole session unless the drawer turned that off — no
-            // sleeping mid-pose (FD-004 acceptance).
             if (keepAwake)
                 Window?.AddFlags(WindowManagerFlags.KeepScreenOn);
 
@@ -173,45 +171,36 @@ namespace FigureDrawing
             StartSession();
         }
 
-        // A fold opening mid-session moves the rail beside the pose without losing the pose.
         public override void OnConfigurationChanged(Configuration newConfig)
         {
             base.OnConfigurationChanged(newConfig);
             ApplyRailLayout();
         }
 
-        // Backgrounded: freeze the pose clock and stop repainting, so no time is burned and the
-        // timer cannot fire while hidden (FD-005 acceptance).
         protected override void OnPause()
         {
             resumed = false;
 
-            // A session still being built has no clock to freeze; the build itself carries the pause
-            // forward when it publishes (see PublishSession).
+            // A build in flight has no clock to freeze; it carries the pause forward on publish.
             if (sessionReady)
                 session.Pause();
 
             StopTicking();
 
-            // The screen may never come back, and a decode nobody will consume must not outlive it
-            // holding a full-size bitmap (docs/ARCHITECTURE.md §7).
+            // Earlier than the library load's OnStop, deliberately (§7): a decode nobody will
+            // consume must not outlive a screen that may never come back.
             CancelPrefetch();
             base.OnPause();
         }
 
-        // Foregrounded again: pick the pose up exactly where it was left. A session that was already
-        // paused by the drawer, or already over, stays that way.
         protected override void OnResume()
         {
             base.OnResume();
             resumed = true;
 
-            // Nothing to resume until the build publishes, and it will start the clocks itself.
             if (!sessionReady)
                 return;
 
-            // A pause the drawer asked for is remembered by the session itself, so returning from
-            // the background cannot restart a pose that was deliberately stopped.
             if (session.IsComplete || session.PausedByUser)
                 return;
 
@@ -219,9 +208,8 @@ namespace FigureDrawing
             RenderClock();
             StartTicking();
 
-            // The clocks are running again, so a boundary is coming: pick the decode back up. This
-            // is the one running path that does not go through Render, deliberately — a full repaint
-            // here would rebuild the pips and reset the clock cache for no reason.
+            // The one running path that reaches the prefetch outside Render: a full repaint here
+            // would rebuild the pips and reset the clock cache for nothing.
             PrefetchUpcoming();
         }
 
@@ -229,26 +217,21 @@ namespace FigureDrawing
         {
             StopTicking();
             CancelPrefetch();
-            // Drop the keep-awake flag so it can't leak past this screen.
             Window?.ClearFlags(WindowManagerFlags.KeepScreenOn);
             tone?.Release();
             tone?.Dispose();
             tone = null;
 
-            // Every listener on a long-lived object is detached (docs/ARCHITECTURE.md §8).
             if (stage is not null && stageLayoutChanged is not null)
                 stage.LayoutChange -= stageLayoutChanged;
             stageLayoutChanged = null;
 
-            // Null-safe: OnCreate can throw before BindViews runs, and a teardown that NREs would
-            // mask the original failure and leak the bitmap it came here to free.
+            // OnCreate can throw before BindViews runs, and an NRE here would mask that failure.
             image?.SetImageDrawable(null);
             ReleaseDisplayed();
 
             base.OnDestroy();
         }
-
-        // --- Wiring ----------------------------------------------------------
 
         void BindViews()
         {
@@ -284,7 +267,6 @@ namespace FigureDrawing
             summaryAverage = FindViewById<TextView>(Resource.Id.summary_average)!;
             summarySkipped = FindViewById<TextView>(Resource.Id.summary_skipped)!;
 
-            // Manual "done" gesture: finish the pose early instead of waiting out the countdown.
             image.Click += (_, _) => Command(() => session.Next());
 
             FindViewById<Button>(Resource.Id.session_next)!.Click += (_, _) => Command(() => session.Next());
@@ -307,8 +289,7 @@ namespace FigureDrawing
             zoomInChip.Click += (_, _) => ApplyTool(() => tools.ZoomIn());
             zoomOutChip.Click += (_, _) => ApplyTool(() => tools.ZoomOut());
 
-            // Blur is a RenderEffect, which only exists from API 31. Below that the chip would be a
-            // control that does nothing, so it is not offered at all.
+            // RenderEffect is API 31+; below it the chip would be a control that does nothing.
             if (!OperatingSystem.IsAndroidVersionAtLeast(31))
                 blurChip.Visibility = ViewStates.Gone;
 
@@ -316,8 +297,6 @@ namespace FigureDrawing
             FindViewById<Button>(Resource.Id.summary_settings)!.Click += (_, _) => Finish();
         }
 
-        // The four rule-of-thirds guides. Their views are only needed to hang a painter on, so they
-        // are locals rather than four fields that nothing would read again.
         void BindGuides()
         {
             var casingPx = Resources!.GetDimensionPixelSize(Resource.Dimension.grid_line_casing);
@@ -336,8 +315,7 @@ namespace FigureDrawing
                 DarkLine: GetColor(Resource.Color.grid_line_dark),
                 DarkCasing: GetColor(Resource.Color.grid_casing_dark));
 
-            // Where each guide falls on the pose depends on the stage's size, which is not known
-            // until layout has run and changes again when a fold opens. Detached in OnDestroy.
+            // Not a one-shot: the stage's size is unknown until layout runs, and a fold changes it.
             stageLayoutChanged = (_, _) => ApplyGridColors();
             stage.LayoutChange += stageLayoutChanged;
         }
