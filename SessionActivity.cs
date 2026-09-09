@@ -11,8 +11,8 @@ using FigureDrawing.Core;
 
 namespace FigureDrawing
 {
-    // Exported = false is the platform default here, stated rather than inherited: the extras this
-    // screen trusts are only safe while nothing outside the app can supply them.
+    // Exported = false is the platform default for an Activity with no intent filter, stated
+    // rather than inherited: the extras this screen trusts assume nothing outside the app can send.
     [Activity(
         Label = "@string/app_name",
         Exported = false,
@@ -42,7 +42,6 @@ namespace FigureDrawing
 
         const int WideScreenWidthDp = 600;
 
-        // Past this the segments would be sub-pixel, so the strip is dropped entirely.
         const int MaxPips = 40;
 
         LinearLayout body = null!;
@@ -84,8 +83,7 @@ namespace FigureDrawing
 
         int buildGeneration;
 
-        // Not interchangeable with `ticking`, which is also false during the very first build,
-        // before the loop has started.
+        // Not interchangeable with `ticking`, which is also false during the very first build.
         bool resumed;
 
         Java.Lang.IRunnable tickRunnable = null!;
@@ -95,8 +93,8 @@ namespace FigureDrawing
 
         PoseImage? displayed;
 
-        // Every field in this family is read and written on the main thread only, which is why none
-        // is volatile or locked; the Task is the one thing that crosses, and it is immutable.
+        // Unsynchronised on purpose: the prefetch fields below are main-thread-only once a session
+        // is running, and the build path that is not (LoadPose, §7) runs with the slot empty.
 
         // A null image under a non-null id is an answer too: "this file is unreadable".
         string? prefetchedId;
@@ -105,15 +103,14 @@ namespace FigureDrawing
         string? prefetchingId;
         Task<PoseImage?>? prefetchTask;
 
-        // The boundary took the result straight off the Task, so the session owns it: the
-        // continuation must not release or cache it, which would be a second owner.
+        // Set when the boundary took the result straight off the Task: the session owns it, so the
+        // continuation must not release or cache it.
         bool prefetchClaimed;
 
         CancellationTokenSource? prefetchCancel;
 
         int prefetchGeneration;
 
-        // In GridStyles order, and applied by index: the order is the wiring.
         GridLinePainter[] gridPainters = Array.Empty<GridLinePainter>();
 
         GridPalette gridPalette;
@@ -206,7 +203,7 @@ namespace FigureDrawing
             RenderClock();
             StartTicking();
 
-            // The one running path that prefetches outside Render: a repaint here would cost more.
+            // Prefetch without a repaint: Render here would rebuild the pips for nothing.
             PrefetchUpcoming();
         }
 
@@ -318,7 +315,7 @@ namespace FigureDrawing
 
         void StartSession()
         {
-            // Before the new run starts, or the rebuild peaks at two full-size poses.
+            // Dropped before the new run starts, or the rebuild peaks at two full-size poses.
             CancelPrefetch();
             sessionReady = false;
 
@@ -362,7 +359,8 @@ namespace FigureDrawing
             session = built;
             sessionReady = true;
 
-            // The constructor already started the clock, and a backgrounded pose would burn it.
+            // The constructor already started the clock, and a screen that is not in the foreground
+            // would burn the first pose on it.
             if (!resumed)
                 session.Pause();
 
@@ -460,10 +458,11 @@ namespace FigureDrawing
             ticker.RemoveCallbacks(tickRunnable);
         }
 
-        // Only the automatic change chimes: whoever tapped Next is already looking at the screen.
+        // Only the automatic change chimes: whoever tapped Next or Skip is already watching.
         void Chime() => tone?.StartTone(Tone.PropBeep, 120);
 
-        // Called from the tail of every repaint, so it must cost nothing when there is nothing to do.
+        // Called from the tail of a running repaint and from the prefetch's own continuation, so it
+        // must be free when the upcoming id is already cached or in flight.
         void PrefetchUpcoming()
         {
             if (!sessionReady || IsFinishing || IsDestroyed || session.IsPaused)
@@ -482,7 +481,7 @@ namespace FigureDrawing
             if (id == prefetchedId)
                 return;
 
-            // The cached answer landed too late: a boundary consumed that id while it decoded.
+            // The cached answer landed too late: a boundary consumed that id mid-decode.
             ReleasePrefetched();
 
             var generation = ++prefetchGeneration;
@@ -571,8 +570,8 @@ namespace FigureDrawing
             summary.Visibility = ViewStates.Gone;
             status.Visibility = ViewStates.Gone;
 
-            // The reference check is load-bearing: Render re-runs with the same bitmap on every
-            // command and pause, and recycling the one on screen would blank the pose (§8).
+            // Repoint first, then free (§8). The reference check is load-bearing too: Render re-runs
+            // with the same bitmap on every command, and recycling it would blank the pose.
             if (session.CurrentImage is { } pose && !ReferenceEquals(pose, displayed))
             {
                 image.SetImageBitmap(pose.Bitmap);
@@ -609,8 +608,8 @@ namespace FigureDrawing
 
             RenderPips();
 
-            // The cache is keyed on the string alone, and a phase change can carry the same one the
-            // pose ended on — a done-tap at 0:15 into a 15s break.
+            // Keyed on the string alone, so a phase change carrying the one the pose ended on — a
+            // done-tap at 0:15 into a 15s break — would leave the break timer on its placeholder.
             lastDisplay = null;
             RenderClock();
 
@@ -633,7 +632,8 @@ namespace FigureDrawing
             CancelPrefetch();
         }
 
-        // setText on these wrap_content views forces a layout pass — hence the cache below.
+        // setText on the wrap_content clock views requests a layout pass, so the string is written
+        // only when it changes; ProgressBar.Progress already no-ops on an unchanged value.
         void RenderClock()
         {
             ring.Progress = session.RemainingPercent;
@@ -716,7 +716,6 @@ namespace FigureDrawing
 
             grid.Visibility = tools.Grid ? ViewStates.Visible : ViewStates.Gone;
 
-            // Zoom and flip move where a guide lands, so its tone is re-resolved — cached samples only.
             ApplyGridColors();
 
             var zoom = (float)tools.Zoom;
@@ -762,8 +761,8 @@ namespace FigureDrawing
         static string FormatDuration(TimeSpan value) =>
             DrawingSession.Format((int)Math.Round(value.TotalSeconds));
 
-        // Main thread only — the running constructor, and a tick or skip by way of the aggregate's
-        // own resolve — which is what lets the one-entry cache be a plain field.
+        // Main thread for a tick or a skip, but NOT for the running constructor, which resolves its
+        // first pose on the build's pool thread (§7) — the one path that reaches these fields off it.
         PoseImage? LoadPose(string id)
         {
             if (prefetchedId == id)
@@ -783,6 +782,8 @@ namespace FigureDrawing
             return DecodePose(ContentResolver!, id, CancellationToken.None);
         }
 
+        // Static and handed its resolver: this runs on a pool thread, where an instance property
+        // would be a JNI call on a peer teardown may be disposing underneath it.
         static PoseImage? DecodePose(ContentResolver resolver, string id, CancellationToken cancelled)
         {
             var priority = Android.OS.Process.GetThreadPriority(Android.OS.Process.MyTid());
@@ -848,8 +849,8 @@ namespace FigureDrawing
             return new ColorMatrixColorFilter(matrix);
         }
 
-        // Filtered scaling on purpose: each cell must be a box average of the strip its guide
-        // crosses. Null means "could not sample", and GridContrast falls back to the light style.
+        // Filtered scaling on purpose: each cell must be a box average of the region it stands for,
+        // so GridContrast can mean the cells a guide's band covers. Null falls back to the light style.
         static int[]? SampleForGuides(Bitmap bitmap)
         {
             Bitmap? scaled = null;
