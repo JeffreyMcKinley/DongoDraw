@@ -1,7 +1,7 @@
 # Issue tracker: GitHub
 
 Issues and specs for this repo live as GitHub issues on
-[`JeffreyMcKinley/FigureDrawing`](https://github.com/JeffreyMcKinley/FigureDrawing/issues). Use the
+[`JeffreyMcKinley/DongoDraw`](https://github.com/JeffreyMcKinley/DongoDraw/issues). Use the
 `gh` CLI for all operations. The repo is private; issues are visible to collaborators only.
 
 ## Conventions
@@ -28,7 +28,7 @@ contradicts them is wrong, not visionary. Acceptance criteria cite invariant ids
 (`INV-<family>-<n>`) rather than restating rules in new words.
 
 Links inside an issue body must be **absolute** —
-`https://github.com/JeffreyMcKinley/FigureDrawing/blob/master/docs/...`. GitHub does not resolve
+`https://github.com/JeffreyMcKinley/DongoDraw/blob/master/docs/...`. GitHub does not resolve
 relative paths in issue bodies.
 
 ## Labels

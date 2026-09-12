@@ -29,13 +29,13 @@ Overrides the generic guidance above. This workspace has no `package.json`, no l
 root `node_modules` — Nx is vendored under `.nx/installation/` and driven by a wrapper script.
 
 - Run every target as `./nx.bat run <project>:<target>` on Windows, `./nx run <project>:<target>`
-  elsewhere. Example: `./nx.bat run FigureDrawing.Tests:test`.
+  elsewhere. Example: `./nx.bat run DongoDraw.Tests:test`.
 - Do NOT use `pnpm nx`, `npm exec nx`, `npx nx` or `yarn nx`. pnpm is not installed, and the npm/npx
   forms resolve a globally installed Nx against this workspace's vendored version and die with
   `ERR_UNSUPPORTED_ESM_URL_SCHEME`.
 - There is no `node_modules/@nx/<plugin>/PLUGIN.md` to read here.
 - The one command that bypasses Nx is the emulator run:
-  `dotnet build FigureDrawing.csproj -t:RunEmulator` — see
+  `dotnet build DongoDraw.csproj -t:RunEmulator` — see
   [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) §12.
 
 
@@ -45,7 +45,7 @@ Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) before changing code. It defin
 split, the rules for crossing that boundary, threading and lifecycle requirements, the four-tier
 testing strategy, and the anti-patterns that count as violations.
 
-Short version: all logic that can be written without Android goes in `FigureDrawing.Core` and is
+Short version: all logic that can be written without Android goes in `DongoDraw.Core` and is
 unit tested there; Activities only wire Core to views.
 
 
@@ -57,7 +57,7 @@ Every feature or bug fix follows this sequence. No step is optional.
 
 Use the `tdd` skill (`/tdd`) to drive implementation:
 
-1. **Red.** Write failing tests first. Run them (`./nx.bat run FigureDrawing.Tests:test`) and
+1. **Red.** Write failing tests first. Run them (`./nx.bat run DongoDraw.Tests:test`) and
    confirm they fail. A test that has never been red has not been shown to test anything.
 2. **Green.** Write the minimal code to make the tests pass. Run the tests again and confirm green.
 3. **Refactor.** Clean up while green. Tests must stay green after every change.

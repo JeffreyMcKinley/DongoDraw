@@ -1,6 +1,6 @@
 using Android.Graphics;
 
-namespace FigureDrawing
+namespace DongoDraw
 {
     // The screen owns the bitmap and frees it (ARCHITECTURE.md §8).
     internal sealed class PoseImage

@@ -34,10 +34,10 @@ runner=./nx
 [ -x "$runner" ] || runner=./nx.bat
 
 if command -v timeout >/dev/null 2>&1; then
-  timeout 180 "$runner" run FigureDrawing.Tests:test 2>&1 | tail -20
+  timeout 180 "$runner" run DongoDraw.Tests:test 2>&1 | tail -20
   [ "${PIPESTATUS[0]}" -eq 124 ] && echo "test-on-save: timed out after 180s (another build holding locks?); skipped."
 else
-  "$runner" run FigureDrawing.Tests:test 2>&1 | tail -20
+  "$runner" run DongoDraw.Tests:test 2>&1 | tail -20
 fi
 
 exit 0

@@ -1,4 +1,4 @@
-# FigureDrawing
+# DongoDraw
 
 MVP
 User wants to start a figure drawing session.

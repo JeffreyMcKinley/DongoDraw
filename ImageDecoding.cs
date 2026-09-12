@@ -1,8 +1,8 @@
 using Android.Content;
 using Android.Graphics;
-using FigureDrawing.Core;
+using DongoDraw.Core;
 
-namespace FigureDrawing
+namespace DongoDraw
 {
     internal static class ImageDecoding
     {

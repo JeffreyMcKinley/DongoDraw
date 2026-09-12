@@ -32,8 +32,8 @@ term or a decision actually gets resolved.
 │   ├── DDD-ARCHITECTURE.md    ← §15 ubiquitous language, §16 bounded contexts
 │   ├── DOMAIN-MODEL.md        ← object cards + INV-<family>-<n> invariants
 │   └── adr/                   ← not created yet
-├── FigureDrawing.Core/        ← all logic writable without Android
-└── FigureDrawing.Tests/
+├── DongoDraw.Core/        ← all logic writable without Android
+└── DongoDraw.Tests/
 ```
 
 ## Use the glossary's vocabulary

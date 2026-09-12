@@ -1,38 +1,38 @@
 <#
 .SYNOPSIS
-  Runs the FigureDrawing Appium end-to-end UI tests (FigureDrawing.UITests).
+  Runs the DongoDraw Appium end-to-end UI tests (DongoDraw.UITests).
 
 .DESCRIPTION
   These tests need infrastructure that a normal `nx test` deliberately skips. This script wires it
   all up, runs the suite with RUN_APPIUM=1, and tears the server down afterwards:
 
     1. installs Appium + the uiautomator2 driver if missing (global npm)
-    2. boots the FigureDrawing_Pixel emulator if no device is attached
+    2. boots the DongoDraw_Pixel emulator if no device is attached
     3. builds + installs the signed APK
     4. starts an Appium server, waits for it, runs the tests, stops the server
 
   Prereqs (see repo memory): JDK 17 + Android SDK. Override paths with the params below or the
   matching environment variables.
 
-  Two AVDs are in play. FigureDrawing_Pixel (phone) is the default. FigureDrawing_Fold is a
+  Two AVDs are in play. DongoDraw_Pixel (phone) is the default. DongoDraw_Fold is a
   "7.6in Foldable" (1768x2208 @420dpi = 673dp wide unfolded), which is the geometry the Galaxy Z
   Fold7 rail bug showed up on: the player rail becomes a fixed-width column beside the pose there
-  without any rotation. Run it with -Avd FigureDrawing_Fold; -CreateAvd creates whichever AVD was
+  without any rotation. Run it with -Avd DongoDraw_Fold; -CreateAvd creates whichever AVD was
   named if it does not exist yet.
 #>
 [CmdletBinding()]
 param(
     [string]$Jdk = $env:JavaSdkDirectory,
     [string]$Sdk = $env:AndroidSdkDirectory,
-    [string]$Avd = "FigureDrawing_Pixel",
+    [string]$Avd = "DongoDraw_Pixel",
     [string]$AppiumUrl = "http://127.0.0.1:4723"
 )
 
 # Device profile used when an AVD named above has to be created. Anything else is created on the
 # phone profile, which is the shape the rest of the suite assumes.
 $AvdDeviceProfiles = @{
-    "FigureDrawing_Pixel" = "pixel_6"
-    "FigureDrawing_Fold"  = "7.6in Foldable"
+    "DongoDraw_Pixel" = "pixel_6"
+    "DongoDraw_Fold"  = "7.6in Foldable"
 }
 $SystemImage = "system-images;android-35;google_apis;x86_64"
 
@@ -116,10 +116,10 @@ Write-Host "Building signed APK..." -ForegroundColor Cyan
 # Without it, a plain `adb install` of a Debug APK launches to a native abort ("No assemblies found
 # in .../.__override__") because Fast Deployment expects the assemblies pushed separately (as
 # `-t:Run` does). A self-contained APK is required for Appium to install + launch it standalone.
-& dotnet build (Join-Path $repoRoot "FigureDrawing.csproj") -c Debug --nologo `
+& dotnet build (Join-Path $repoRoot "DongoDraw.csproj") -c Debug --nologo `
     -p:JavaSdkDirectory=$Jdk -p:AndroidSdkDirectory=$Sdk -p:EmbedAssembliesIntoApk=true
 if ($LASTEXITCODE -ne 0) { Die "Android build failed." }
-$apk = Join-Path $repoRoot "bin\Debug\net9.0-android\com.companyname.FigureDrawing-Signed.apk"
+$apk = Join-Path $repoRoot "bin\Debug\net9.0-android\com.companyname.DongoDraw-Signed.apk"
 if (-not (Test-Path $apk)) { Die "APK not found at $apk" }
 & $adb install -r $apk 2>&1 | Write-Host
 if ($LASTEXITCODE -ne 0) { Die "adb install failed." }
@@ -132,7 +132,7 @@ if ($LASTEXITCODE -ne 0) { Die "adb install failed." }
 # reopens wherever it was last used, so a stale location makes "select the default folder" select
 # the wrong one.
 Write-Host "Clearing app + picker state..." -ForegroundColor Cyan
-& $adb shell pm clear com.companyname.FigureDrawing 2>&1 | Write-Host
+& $adb shell pm clear com.companyname.DongoDraw 2>&1 | Write-Host
 foreach ($picker in @("com.google.android.documentsui", "com.android.documentsui")) {
     & $adb shell pm clear $picker 2>&1 | Out-Null
 }
@@ -179,7 +179,7 @@ try {
 
     $env:RUN_APPIUM = "1"
     $env:APPIUM_URL = $AppiumUrl
-    dotnet test (Join-Path $repoRoot "FigureDrawing.UITests\FigureDrawing.UITests.csproj") --nologo
+    dotnet test (Join-Path $repoRoot "DongoDraw.UITests\DongoDraw.UITests.csproj") --nologo
     $testExit = $LASTEXITCODE
 }
 finally {

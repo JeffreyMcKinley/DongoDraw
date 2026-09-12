@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  The app's only persisted file is files/figuredrawing.db (LiteDB), which holds the settings
+  The app's only persisted file is files/dongodraw.db (LiteDB), which holds the settings
   document — including LastCollection, a tree uri that embeds the path of the folder the artist
   picked. It is excluded from both transports:
 
@@ -15,11 +15,11 @@
 -->
 <data-extraction-rules>
   <cloud-backup>
-    <exclude domain="file" path="figuredrawing.db" />
-    <exclude domain="file" path="figuredrawing-log.db" />
+    <exclude domain="file" path="dongodraw.db" />
+    <exclude domain="file" path="dongodraw-log.db" />
   </cloud-backup>
   <device-transfer>
-    <exclude domain="file" path="figuredrawing.db" />
-    <exclude domain="file" path="figuredrawing-log.db" />
+    <exclude domain="file" path="dongodraw.db" />
+    <exclude domain="file" path="dongodraw-log.db" />
   </device-transfer>
 </data-extraction-rules>

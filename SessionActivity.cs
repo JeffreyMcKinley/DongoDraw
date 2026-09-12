@@ -7,9 +7,9 @@ using Android.Media;
 using Android.Util;
 using Android.Views;
 using Android.Widget;
-using FigureDrawing.Core;
+using DongoDraw.Core;
 
-namespace FigureDrawing
+namespace DongoDraw
 {
     // Exported = false is the platform default for an Activity with no intent filter, stated
     // rather than inherited: the extras this screen trusts assume nothing outside the app can send.
@@ -30,7 +30,7 @@ namespace FigureDrawing
         public const string ExtraKeepAwake = "keepawake";
         public const string ExtraChime = "chime";
 
-        const string LogTag = "FigureDrawing";
+        const string LogTag = "DongoDraw";
 
         const int MaxImageDimension = 1080;
 

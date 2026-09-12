@@ -78,7 +78,7 @@ without the platform.
 | Signal | Target |
 |---|---|
 | Unit tests | every invariant in §3 has a named test |
-| Suite | `./nx.bat run FigureDrawing.Tests:test` green |
+| Suite | `./nx.bat run DongoDraw.Tests:test` green |
 | On-device | <observable behaviour on the emulator> |
 | Budget | <memory / frame / decode bound> |
 

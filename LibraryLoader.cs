@@ -3,9 +3,9 @@ using Android.Database;
 using Android.Graphics;
 using Android.Provider;
 using Android.Util;
-using FigureDrawing.Core;
+using DongoDraw.Core;
 
-namespace FigureDrawing
+namespace DongoDraw
 {
     sealed class LibraryLoad(ReferenceLibrary library, List<Bitmap?> thumbnails)
     {
@@ -17,7 +17,7 @@ namespace FigureDrawing
     // The application ContentResolver, never an Activity's — that would pin its view tree.
     sealed class LibraryLoader(ContentResolver resolver)
     {
-        const string LogTag = "FigureDrawing";
+        const string LogTag = "DongoDraw";
 
         readonly LoadGeneration generation = new();
 

@@ -43,7 +43,7 @@ section or invariant id you are relying on. Both follow Domain-Driven Design —
 check, and which object enforces it, is a DDD question answered there.
 
 - A hardening fix must not put a rule inside an Activity, reference `Android.*` from
-  `FigureDrawing.Core`, or open a `LiteDatabase` outside `Settings`. If the safe fix seems to
+  `DongoDraw.Core`, or open a `LiteDatabase` outside `Settings`. If the safe fix seems to
   require one of those, say so explicitly and propose the Core-side alternative.
 - "Fails securely" here means the *defined domain outcome*, not an exception: an unreadable image
   skips its pose without counting (`INV-PLY-2`), a wholly unreadable pool ends the session with a

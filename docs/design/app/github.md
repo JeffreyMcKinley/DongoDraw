@@ -1,4 +1,4 @@
-repo: JeffreyMcKinley/FigureDrawing
+repo: JeffreyMcKinley/DongoDraw
 branch: master
 
 ## Last sync
@@ -14,17 +14,17 @@ date: 2026-08-16T22:44:37Z
 
 ## Screen map
 
-Corrected 2026-09-06: the 2026-08-16 map named `FigureDrawing.Core/FolderImageEnumerator.cs` and
-`FigureDrawing.Core/Data/AppSettings.cs`, neither of which exists — the library type is
+Corrected 2026-09-06: the 2026-08-16 map named `DongoDraw.Core/FolderImageEnumerator.cs` and
+`DongoDraw.Core/Data/AppSettings.cs`, neither of which exists — the library type is
 `ReferenceLibrary` and the settings type is `Settings`. Nothing checks these paths automatically, so
 re-read them whenever a Core type is renamed. **This copy is ahead of the design project's; push it
 back on the next sync.**
 
 | Screen | Repo files |
 | --- | --- |
-| Session setup | FigureDrawing.Core/SessionSetup.cs, Resources/layout/activity_main.xml, Resources/values/strings.xml |
-| Pose viewer / paused | FigureDrawing.Core/Session/DrawingSession.cs, FigureDrawing.Core/Session/ViewerTools.cs |
-| Session complete | FigureDrawing.Core/Session/DrawingSession.cs (SessionSummary) |
-| Images library | FigureDrawing.Core/ReferenceLibrary.cs, FigureDrawing.Core/LibraryReference.cs, FigureDrawing.Core/LibraryLoadState.cs |
-| Settings | FigureDrawing.Core/Data/Settings.cs |
-| Rule-of-thirds guides | FigureDrawing.Core/GridContrast.cs |
+| Session setup | DongoDraw.Core/SessionSetup.cs, Resources/layout/activity_main.xml, Resources/values/strings.xml |
+| Pose viewer / paused | DongoDraw.Core/Session/DrawingSession.cs, DongoDraw.Core/Session/ViewerTools.cs |
+| Session complete | DongoDraw.Core/Session/DrawingSession.cs (SessionSummary) |
+| Images library | DongoDraw.Core/ReferenceLibrary.cs, DongoDraw.Core/LibraryReference.cs, DongoDraw.Core/LibraryLoadState.cs |
+| Settings | DongoDraw.Core/Data/Settings.cs |
+| Rule-of-thirds guides | DongoDraw.Core/GridContrast.cs |

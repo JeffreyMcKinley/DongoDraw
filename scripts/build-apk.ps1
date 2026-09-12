@@ -1,13 +1,13 @@
 <#
 .SYNOPSIS
-  Builds an installable FigureDrawing APK and copies it to artifacts\.
+  Builds an installable DongoDraw APK and copies it to artifacts\.
 
 .DESCRIPTION
   Sideload flow (no emulator, no MSBuild -t:Run):
 
     1. `dotnet publish -c Release -p:AndroidPackageFormat=apk` -> a signed, self-contained APK
        (Release publish defaults to .aab, which `adb install` cannot take, hence the explicit format)
-    2. copies the signed APK to artifacts\FigureDrawing-<version>-<config>.apk and writes a
+    2. copies the signed APK to artifacts\DongoDraw-<version>-<config>.apk and writes a
        .json manifest beside it (version, versionCode, commit, UTC time, SHA-256)
     3. optionally `adb install -r` it onto an attached phone (-Install)
 
@@ -98,7 +98,7 @@ $env:ANDROID_HOME     = $Sdk
 $env:ANDROID_SDK_ROOT = $Sdk
 $env:JAVA_HOME        = $Jdk
 
-$project = Join-Path $repoRoot "FigureDrawing.csproj"
+$project = Join-Path $repoRoot "DongoDraw.csproj"
 $tfm     = "net9.0-android"
 
 # 1. Publish ---------------------------------------------------------------------------------------
@@ -149,7 +149,7 @@ if (-not $apk) {
 if (-not $apk) { Die "No APK found in $publishDir" }
 
 if (-not (Test-Path $OutDir)) { New-Item -ItemType Directory -Path $OutDir | Out-Null }
-$stem = "FigureDrawing-$($version.Full)-$($Configuration.ToLower())"
+$stem = "DongoDraw-$($version.Full)-$($Configuration.ToLower())"
 $dest = Join-Path $OutDir "$stem.apk"
 Copy-Item $apk.FullName $dest -Force
 

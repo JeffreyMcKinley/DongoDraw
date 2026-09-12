@@ -70,7 +70,7 @@ Read surrounding context from unchanged files as needed, but do not report findi
 - `IDisposable` honored with `using`, especially for `Bitmap`, streams, and LiteDB connections
 - Event handler subscriptions unsubscribed to avoid leaks
 - Resource IDs and layout bindings match `Resources/layout/*.xml`
-- Business logic belongs in `FigureDrawing.Core`, not in Activities
+- Business logic belongs in `DongoDraw.Core`, not in Activities
 
 **Architecture**
 
@@ -95,7 +95,7 @@ a layering scheme the project has not adopted.
   (SAF, off the UI thread), `ImageDecoding` (BitmapFactory). There is **no ViewModel or translation layer**: screens call
   Core types directly, and that is the intended shape at this size. Introducing a presenter layer
   is a design decision, not a drive-by refactor — flag it if a change smuggles one in.
-- **Project boundaries**: `FigureDrawing.Core` holds the domain and its data access and must never
+- **Project boundaries**: `DongoDraw.Core` holds the domain and its data access and must never
   reference `Mono.Android`, `Android.*`, or `Java.*`. The app project references Core; Core never
   references the app. Nothing references the test projects. LiteDB is transitive via Core — a
   direct `PackageReference` in the app project is a finding.
@@ -146,7 +146,7 @@ a layering scheme the project has not adopted.
   which is authoritative.
 - **Forbidden** — each of these is an architecture violation, not a style opinion:
   - A rule, calculation, or state machine implemented inside an Activity
-  - `Android.*` / `Java.*` referenced from `FigureDrawing.Core`
+  - `Android.*` / `Java.*` referenced from `DongoDraw.Core`
   - `DateTime.Now`, a directly constructed `Stopwatch`, or `new Random()` inside Core instead of
     the injected clock / `Random` (`INV-X-7`, `INV-X-8`)
   - A `LiteDatabase` opened outside `Settings`

@@ -45,7 +45,7 @@ invariant you are working within. Both follow Domain-Driven Design, so which lay
 a thread, or a buffer is a DDD question settled there. An optimization that breaks one of these is
 not an optimization:
 
-- **The domain is synchronous and allocation-cheap by design.** Nothing in `FigureDrawing.Core`
+- **The domain is synchronous and allocation-cheap by design.** Nothing in `DongoDraw.Core`
   sleeps, posts, schedules, or starts a thread (`INV-X-9`). Do not propose async, parallelism, or a
   cache inside a domain object — propose it in the Android layer instead.
 - **No bitmap or platform type may enter Core** (`INV-X-4`). A bitmap cache belongs beside

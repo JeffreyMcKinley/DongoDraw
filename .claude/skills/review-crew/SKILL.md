@@ -36,7 +36,7 @@ Default: all five. Drop ones with no surface area in the diff — running a revi
 | `code-quality-reviewer` | any code — effectively always |
 | `security-code-reviewer` | input handling, file paths, permissions, manifest, intents, storage, credentials, third-party deps |
 | `performance-reviewer` | loops, image decoding, I/O, database queries, timers, draw/measure paths, async |
-| `test-coverage-reviewer` | any behavior change in `FigureDrawing.Core` or an Activity, or any change to `FigureDrawing.Tests` / `FigureDrawing.UITests` |
+| `test-coverage-reviewer` | any behavior change in `DongoDraw.Core` or an Activity, or any change to `DongoDraw.Tests` / `DongoDraw.UITests` |
 | `documentation-accuracy-reviewer` | public APIs, README, `docs/`, `CLAUDE.md`, `AGENTS.md`, build or deploy commands |
 
 State which reviewers you are running and why you skipped any.
@@ -49,7 +49,7 @@ Give each agent the same brief:
 
 - The target definition (the exact git command or the file list — not the diff text; agents re-derive it)
 - The user's stated concerns, verbatim, if any
-- Repo context: .NET Android app, C#, Nx workspace, `FigureDrawing.Core` holds testable logic, `FigureDrawing.Tests` / `FigureDrawing.UITests` hold tests
+- Repo context: .NET Android app, C#, Nx workspace, `DongoDraw.Core` holds testable logic, `DongoDraw.Tests` / `DongoDraw.UITests` hold tests
 - Output contract: findings as `path:line — severity — problem — fix`, no praise sections, no summary paragraph
 
 ## 4. Merge

@@ -1,0 +1,63 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0-android</TargetFramework>
+    <!--
+      API 26 is the floor because the app's typeface is a framework font resource
+      (Resources/font/inter.xml, referenced from the theme). Font resources and android:fontFamily
+      pointing at one were added in Oreo; below that the attribute is ignored and every screen would
+      silently fall back to the platform sans-serif. Guarded by AndroidBuildTests.
+    -->
+    <SupportedOSPlatformVersion>26</SupportedOSPlatformVersion>
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationId>com.companyname.DongoDraw</ApplicationId>
+    <!--
+      ApplicationVersion (versionCode) and ApplicationDisplayVersion (versionName) are NOT set here.
+      They are derived in Directory.Build.props from version.props, the single source of truth;
+      a value written here would silently win over it. Bump with scripts/bump-version.ps1.
+    -->
+    <!--
+      Enables trim analyzers and full trimming during Release mode.
+      To learn more, see: https://learn.microsoft.com/dotnet/core/deploying/trimming/trimming-options#trimming-granularity
+    -->
+    <TrimMode>full</TrimMode>
+  </PropertyGroup>
+
+  <!--
+    This app project lives at the repo root, so its default **/*.cs glob would otherwise pull in
+    the sibling DongoDraw.Core / DongoDraw.Tests sources. They are referenced as projects
+    instead; exclude their folders from this project's compilation.
+  -->
+  <ItemGroup>
+    <Compile Remove="DongoDraw.Core\**\*.cs" />
+    <Compile Remove="DongoDraw.Tests\**\*.cs" />
+    <Compile Remove="DongoDraw.UITests\**\*.cs" />
+  </ItemGroup>
+
+  <!-- LiteDB comes transitively via DongoDraw.Core (which owns Data/Settings). -->
+  <ItemGroup>
+    <ProjectReference Include="DongoDraw.Core\DongoDraw.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include=".claude\skills\" />
+    <Folder Include="docs\BugScreenshots\" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include=".claude\hooks\test-on-save.sh" />
+  </ItemGroup>
+
+  <!--
+    One-command run: `dotnet build DongoDraw.csproj -t:RunEmulator` boots the
+    DongoDraw_Pixel emulator (if none is attached) and deploys + launches the app via the
+    run-app script. Force a device when several are attached with -p:RunTarget=emulator-5554.
+    Delegates to the same scripts/run-app.* used for a manual run so the flow stays in one place.
+  -->
+  <Target Name="RunEmulator">
+    <PropertyGroup>
+      <_RunTargetArg Condition="'$(RunTarget)' != ''">-Target $(RunTarget)</_RunTargetArg>
+    </PropertyGroup>
+    <Exec Condition="'$(OS)' == 'Windows_NT'" WorkingDirectory="$(MSBuildProjectDirectory)" Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;scripts\run-app.ps1&quot; $(_RunTargetArg)" />
+    <Exec Condition="'$(OS)' != 'Windows_NT'" WorkingDirectory="$(MSBuildProjectDirectory)" Command="bash scripts/run-app.sh $(RunTarget)" />
+  </Target>
+</Project>
