@@ -23,7 +23,8 @@ unit tested there; Activities only wire Core to views.
 
 ## Comments
 
-Production source is roughly 4% comment lines and is meant to stay there (#11 removed about 1,900).
+Production source is 135 comment lines in 3,290 — 4.1% — and is meant to stay there. #11 removed
+1,181 comment lines from it, taking it down from 29.2%.
 Before adding one, the question is not "is this helpful?" but "does this belong in the code at all?".
 
 **Delete, or never write:**
