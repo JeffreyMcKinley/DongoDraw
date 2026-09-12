@@ -5,12 +5,12 @@ using Android.Provider;
 using Android.Util;
 using Android.Views;
 using Android.Widget;
-using FigureDrawing.Core;
-using FigureDrawing.Data;
+using DongoDraw.Core;
+using DongoDraw.Data;
 
-using Settings = FigureDrawing.Data.Settings;
+using Settings = DongoDraw.Data.Settings;
 
-namespace FigureDrawing
+namespace DongoDraw
 {
     // Three contexts in one screen, as three tabbed panes: the reference library, session setup
     // and preferences. The deviation and its closing trigger are DDD-ARCHITECTURE.md §20.
@@ -18,8 +18,8 @@ namespace FigureDrawing
     public class MainActivity : Activity
     {
         const int PickFolderRequestCode = 1000;
-        const string LogTag = "FigureDrawing";
-        const string DatabaseFileName = "figuredrawing.db";
+        const string LogTag = "DongoDraw";
+        const string DatabaseFileName = "dongodraw.db";
 
         const int ThumbnailDimension = 360;
 

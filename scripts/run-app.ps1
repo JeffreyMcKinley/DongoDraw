@@ -1,11 +1,11 @@
 <#
 .SYNOPSIS
-  Deploys and launches the FigureDrawing app on the FigureDrawing_Pixel emulator.
+  Deploys and launches the DongoDraw app on the DongoDraw_Pixel emulator.
 
 .DESCRIPTION
   Manual "run the app" flow:
 
-    1. boots the FigureDrawing_Pixel emulator if no device is attached, and waits for boot
+    1. boots the DongoDraw_Pixel emulator if no device is attached, and waits for boot
     2. deploys + launches via `dotnet build -t:Run` (self-installs, no fragile adb install)
 
   Directory.Build.props supplies the Android SDK + JDK 17 paths, so no -p: overrides are needed
@@ -20,7 +20,7 @@
 param(
     [string]$Jdk = $env:JavaSdkDirectory,
     [string]$Sdk = $env:AndroidSdkDirectory,
-    [string]$Avd = "FigureDrawing_Pixel",
+    [string]$Avd = "DongoDraw_Pixel",
     [string]$Target = ""
 )
 
@@ -66,7 +66,7 @@ Write-Host "Device ready." -ForegroundColor Green
 # crashes at launch ("No assemblies found"), so always run through the MSBuild target.
 Write-Host "Deploying to device..." -ForegroundColor Cyan
 $buildArgs = @(
-    (Join-Path $repoRoot "FigureDrawing.csproj"),
+    (Join-Path $repoRoot "DongoDraw.csproj"),
     "-t:Run", "-c", "Debug", "--nologo",
     "-p:JavaSdkDirectory=$Jdk", "-p:AndroidSdkDirectory=$Sdk"
 )

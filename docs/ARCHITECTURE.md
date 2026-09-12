@@ -1,15 +1,15 @@
-# Architecture — FigureDrawing
+# Architecture — DongoDraw
 
 How this codebase is organized and the rules changes must hold to. Written for agents and
 contributors reviewing or extending the app. Product scope lives in the root [README](../README.md);
-planned work lives in [GitHub Issues](https://github.com/JeffreyMcKinley/FigureDrawing/issues).
+planned work lives in [GitHub Issues](https://github.com/JeffreyMcKinley/DongoDraw/issues).
 
 > Derived from the code as of #4. Where a rule below is marked **(confirm)** it was inferred
 > from existing code rather than stated anywhere — correct it if the intent differs.
 
 ## 1. The one rule
 
-**All logic that can be written without Android goes in `FigureDrawing.Core`. The Android layer
+**All logic that can be written without Android goes in `DongoDraw.Core`. The Android layer
 only wires it to views.**
 
 Everything else in this document follows from that. Core is a plain `net9.0` library with no
@@ -21,24 +21,24 @@ verify and stays deliberately thin.
 
 | Project | TFM | Role |
 |---|---|---|
-| `FigureDrawing.csproj` (repo root) | `net9.0-android` | Android app: Activities, layouts, resources, decoding |
-| `FigureDrawing.Core` | `net9.0` | Session engine, setup validation, folder enumeration, settings persistence, bitmap math |
-| `FigureDrawing.Tests` | `net9.0` | xUnit unit, E2E-model, and contract tests. No device needed |
-| `FigureDrawing.UITests` | `net9.0` | Appium UI tests. Needs a running emulator |
+| `DongoDraw.csproj` (repo root) | `net9.0-android` | Android app: Activities, layouts, resources, decoding |
+| `DongoDraw.Core` | `net9.0` | Session engine, setup validation, folder enumeration, settings persistence, bitmap math |
+| `DongoDraw.Tests` | `net9.0` | xUnit unit, E2E-model, and contract tests. No device needed |
+| `DongoDraw.UITests` | `net9.0` | Appium UI tests. Needs a running emulator |
 
 Dependency direction, and the only direction allowed:
 
 ```
-FigureDrawing (Android)  ──▶  FigureDrawing.Core  ──▶  LiteDB
+DongoDraw (Android)  ──▶  DongoDraw.Core  ──▶  LiteDB
       │                              ▲
       │                              │
-FigureDrawing.UITests          FigureDrawing.Tests
+DongoDraw.UITests          DongoDraw.Tests
    (via Appium, black box)        (direct reference)
 ```
 
 **Rules**
 
-- `FigureDrawing.Core` must never reference `Mono.Android`, `Android.*`, or `Java.*`. If a Core
+- `DongoDraw.Core` must never reference `Mono.Android`, `Android.*`, or `Java.*`. If a Core
   type needs a platform concept, it takes an abstraction or a delegate instead (see §4).
 - The app project references Core. Core never references the app.
 - Nothing references the test projects.
@@ -47,7 +47,7 @@ FigureDrawing.UITests          FigureDrawing.Tests
 
 **Root-glob gotcha.** The app csproj sits at the repo root, so its default `**/*.cs` glob would
 swallow the sibling projects' sources. The three `<Compile Remove>` entries in
-`FigureDrawing.csproj` are load-bearing; `AndroidBuildTests` guards them. Adding a new sibling
+`DongoDraw.csproj` are load-bearing; `AndroidBuildTests` guards them. Adding a new sibling
 project means adding a fourth exclude.
 
 ## 3. Layers
@@ -173,7 +173,7 @@ under test.
   swipe off the recents list never reaches `OnDestroy`. `Settings.Save` checkpoints, so a value that
   has been saved is in the datafile rather than only in the write-ahead log — see §6.
   `Android.Provider` also declares a `Settings`, so `MainActivity` carries a
-  `using Settings = FigureDrawing.Data.Settings;` alias.
+  `using Settings = DongoDraw.Data.Settings;` alias.
 - **(confirm)** Session state is *not* currently saved in `OnSaveInstanceState`, so process death
   restarts the pose. That is a known gap, not a pattern to copy. `SessionActivity` mitigates the
   common case by declaring `ConfigurationChanges` for size/orientation and re-laying out in place,
@@ -182,7 +182,7 @@ under test.
 ## 6. Data access
 
 - LiteDB is reached only through `Settings`. No other type opens a `LiteDatabase`.
-- The database file lives in app-private storage: `Path.Combine(FilesDir.AbsolutePath, "figuredrawing.db")`.
+- The database file lives in app-private storage: `Path.Combine(FilesDir.AbsolutePath, "dongodraw.db")`.
 - `Settings` is `IDisposable` and is disposed in `OnDestroy`. It is a single-document store —
   `Id == 1` in the `settings` collection — opened with `Settings.Open(path)` and written with
   `Save()`. Saving through a disposed instance throws rather than dropping the write silently.
@@ -395,7 +395,7 @@ runs on the pool thread every other time.
 
 ## 9. Errors and logging
 
-- All logs go through `Android.Util.Log` with the tag constant `LogTag = "FigureDrawing"`.
+- All logs go through `Android.Util.Log` with the tag constant `LogTag = "DongoDraw"`.
 - Anything crossing the system boundary — SAF results, URI permission grants, launching the
   picker, image decoding, building a picker hint from a persisted tree URI — is wrapped in
   `try`/`catch`, logged, and turned into a visible message rather than a crash.
@@ -447,7 +447,7 @@ runs on the pool thread every other time.
 
 Four tiers, cheapest first. Prefer the cheapest tier that can catch the bug.
 
-**Unit tests** (`FigureDrawing.Tests`) — the default. Everything in Core is covered here, with
+**Unit tests** (`DongoDraw.Tests`) — the default. Everything in Core is covered here, with
 injected clock/`Random`/loader making them deterministic. One file per Core type, except where a
 type owns several invariant families: the session aggregate has one file per family
 (`DrawingSessionTests`, `DrawingSessionSetupTests`, `DrawingSessionCountdownTests`,
@@ -461,7 +461,7 @@ a pattern worth understanding before touching the Android layer. They parse the 
 files* rather than running them, so they need no device but still catch the runtime-only failures
 that Xamarin's compile-time checks miss: a view id referenced from code but absent from the layout,
 a missing string, a build property regression. `TestPaths` locates the repo root by walking up to
-`FigureDrawing.sln`, since the working directory differs between `nx` and `dotnet test`.
+`DongoDraw.sln`, since the working directory differs between `nx` and `dotnet test`.
 
 A contract test reads *code*, not prose: `SourceContract` (shared by `FolderMemoryContractTests`,
 `SessionScreenContractTests`, `CrossActivityContractTests` and `LibraryLoadContractTests`,
@@ -481,7 +481,7 @@ test, without Android: the library enumerates a fake tree, the draft produces th
 session runs to its summary. A `Screen` harness inside it mirrors `SessionActivity`'s repaint loop,
 so a break in that wiring fails here rather than only on a device.
 
-**UI tests** (`FigureDrawing.UITests`) — Appium against a real emulator. Slow and last resort; use
+**UI tests** (`DongoDraw.UITests`) — Appium against a real emulator. Slow and last resort; use
 only for behavior genuinely unreachable from Core. Run them with `scripts/run-appium-tests.ps1`,
 which is the only supported entry point: it installs the toolchain, boots the emulator, builds and
 installs a self-contained APK, resets app + picker state, and manages the server.
@@ -522,10 +522,10 @@ Rules:
 
 ## 12. Build and run
 
-- Run tasks through Nx, not the underlying tooling: `./nx.bat run FigureDrawing.Tests:test`.
+- Run tasks through Nx, not the underlying tooling: `./nx.bat run DongoDraw.Tests:test`.
 - `Directory.Build.props` supplies the Android SDK and JDK 17 paths (Microsoft.Android 35 rejects
   JDK 25). Every rule there is guarded so it never overrides an explicit choice.
-- One-command run: `dotnet build FigureDrawing.csproj -t:RunEmulator`, which delegates to
+- One-command run: `dotnet build DongoDraw.csproj -t:RunEmulator`, which delegates to
   `scripts/run-app.*`. Both the MSBuild target and a manual run go through the same script — keep it
   that way.
 - The full Android compile test is opt-in via `RUN_ANDROID_BUILD_TEST=1`.
@@ -546,26 +546,26 @@ Rules:
   back to `version.props` after the publish succeeds, so two APKs of the same commit never share a
   versionCode. `-NoBump` builds the file as it stands; `-BuildNumber N` pins one without editing the
   file. At 99 the build stops — the reset on a semantic bump is what keeps the field in range.
-- `scripts/build-apk.ps1` names its output `artifacts/FigureDrawing-<version>-<config>.apk` and
+- `scripts/build-apk.ps1` names its output `artifacts/DongoDraw-<version>-<config>.apk` and
   writes a matching `.json` manifest (versionCode, commit, dirty flag, SHA-256, UTC time), so a
   generated APK can be traced back to the source it came from.
 
 ## 13. Adding a feature — the checklist
 
-1. Write the rule as a pure type in `FigureDrawing.Core`, taking any platform need as an
+1. Write the rule as a pure type in `DongoDraw.Core`, taking any platform need as an
    abstraction or delegate.
-2. Unit test it in `FigureDrawing.Tests`.
+2. Unit test it in `DongoDraw.Tests`.
 3. Wire it into an Activity: find views, read Core state, render, forward events back.
 4. Add any new view id or string to `strings.xml` / the layout **and** to the contract tests.
 5. Pause and resume it correctly in the lifecycle if it involves time or callbacks.
-6. Run `./nx.bat run FigureDrawing.Tests:test`.
+6. Run `./nx.bat run DongoDraw.Tests:test`.
 
 ## 14. Anti-patterns
 
 Findings against any of these are architecture violations, not style opinions.
 
 - A rule, calculation, or state machine implemented inside an Activity.
-- `Android.*` / `Java.*` referenced from `FigureDrawing.Core`.
+- `Android.*` / `Java.*` referenced from `DongoDraw.Core`.
 - `DateTime.Now`, `Stopwatch`, or `new Random()` used directly inside Core instead of the injected
   clock/`Random`.
 - A `LiteDatabase` opened outside `Settings`.

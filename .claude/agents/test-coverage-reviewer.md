@@ -13,8 +13,8 @@ You are read-only. Never edit files. Report findings for the caller to act on.
 
 Unless the caller names specific files, review the changed code (`git diff`, `git diff --cached`) plus its corresponding tests. Test projects in this repo:
 
-- `FigureDrawing.Tests` — unit and contract tests
-- `FigureDrawing.UITests` — Appium-driven UI tests
+- `DongoDraw.Tests` — unit and contract tests
+- `DongoDraw.UITests` — Appium-driven UI tests
 
 Run tests through `nx` (`./nx.bat run <project>:test`), never the underlying tooling directly. Only run tests when the caller asks or when a claim depends on the result.
 
@@ -27,7 +27,7 @@ rules, a domain service's classification rules. Coverage of getters and wiring i
 
 Four tiers, cheapest first — a finding must name which tier the missing test belongs in:
 
-1. **Unit tests** (`FigureDrawing.Tests`, one file per Core type — or per invariant family, for a
+1. **Unit tests** (`DongoDraw.Tests`, one file per Core type — or per invariant family, for a
    type that owns several, as the session aggregate does) — the default. Every rule in Core
    lives here, made deterministic by the injected clock, `Random`, and loader.
 2. **Contract tests** (`UiResourceContractTests`, `SessionScreenContractTests`,
@@ -42,7 +42,7 @@ Four tiers, cheapest first — a finding must name which tier the missing test b
    than how a statement is spelled.
 3. **E2E-model tests** (`*E2ETests.cs`) — drive the real Core objects through a whole session with
    no Android, covering engine/player/countdown interaction.
-4. **UI tests** (`FigureDrawing.UITests`, Appium) — last resort, for behaviour genuinely unreachable
+4. **UI tests** (`DongoDraw.UITests`, Appium) — last resort, for behaviour genuinely unreachable
    from Core.
 
 Rules that make a gap a finding rather than a suggestion:
@@ -66,7 +66,7 @@ Rules that make a gap a finding rather than a suggestion:
 **Analyze Test Coverage**
 
 - Identify untested code paths, branches, and edge cases introduced by the change
-- Verify public APIs and critical logic in `FigureDrawing.Core` have corresponding tests
+- Verify public APIs and critical logic in `DongoDraw.Core` have corresponding tests
 - Check coverage of error handling and exception scenarios
 - Assess coverage of boundary conditions and input validation
 - Flag logic that lives in an Activity and is therefore only reachable by UI test — recommend extraction to Core where it can be unit tested
@@ -100,4 +100,4 @@ Rules that make a gap a finding rather than a suggestion:
 - **Missing Scenarios** — prioritized list of untested cases
 - **Recommendations** — concrete tests to add, with example implementations
 
-Be thorough but practical. Favor tests that catch real bugs. Respect the testing pyramid — prefer a fast unit test in `FigureDrawing.Tests` over a slow UI test whenever the logic can be reached from Core.
+Be thorough but practical. Favor tests that catch real bugs. Respect the testing pyramid — prefer a fast unit test in `DongoDraw.Tests` over a slow UI test whenever the logic can be reached from Core.

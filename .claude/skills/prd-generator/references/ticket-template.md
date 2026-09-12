@@ -40,7 +40,7 @@ rule that makes it true.
 
 | Tier | What |
 |---|---|
-| Unit (`FigureDrawing.Tests`) | <file + the invariants it covers> |
+| Unit (`DongoDraw.Tests`) | <file + the invariants it covers> |
 | Contract | <`UiResourceContractTests` / `SessionScreenContractTests` entries> or `n/a` |
 | E2E-model | <`SessionE2ETests` flow touched> or `n/a` |
 | UI (Appium) | `n/a` — <or why Core cannot reach it> |

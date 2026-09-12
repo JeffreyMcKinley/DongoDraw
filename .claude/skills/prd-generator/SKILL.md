@@ -1,9 +1,9 @@
 ---
 name: prd-generator
-description: Write a requirements doc for a FigureDrawing feature — a ticket filed as a GitHub issue, or a longer PRD for a multi-ticket feature. Use when the user asks to "create a PRD", "write requirements", "spec this feature", "write a ticket", or "document a feature" before implementation. Produces docs that use the repo's ubiquitous language, place the work in a bounded context, split it across Core/Android, and name its test tier.
+description: Write a requirements doc for a DongoDraw feature — a ticket filed as a GitHub issue, or a longer PRD for a multi-ticket feature. Use when the user asks to "create a PRD", "write requirements", "spec this feature", "write a ticket", or "document a feature" before implementation. Produces docs that use the repo's ubiquitous language, place the work in a bounded context, split it across Core/Android, and name its test tier.
 ---
 
-# PRD Generator — FigureDrawing
+# PRD Generator — DongoDraw
 
 Turn a feature idea into a requirements doc that the implementation checklist in
 [ARCHITECTURE.md §13](../../../docs/ARCHITECTURE.md) can be run against directly.
@@ -110,7 +110,7 @@ A PRD that does not say which side of the Core/Android line each piece lands on 
 
 | Piece | Goes in | Proven by |
 |---|---|---|
-| A rule, calculation, or state machine | `FigureDrawing.Core` | unit test in `FigureDrawing.Tests` |
+| A rule, calculation, or state machine | `DongoDraw.Core` | unit test in `DongoDraw.Tests` |
 | A platform need of that rule (SAF, bitmaps, clock, randomness) | injected abstraction or delegate ([ARCHITECTURE.md §4](../../../docs/ARCHITECTURE.md)) | in-memory fake |
 | View wiring, rendering, lifecycle | Activity | contract test for new view ids / strings |
 | A whole flow across contexts | — | E2E-model test (`SessionE2ETests`) |
@@ -139,7 +139,7 @@ actually be observed:
 |---|---|
 | Test | "every row of the new invariant table has a named unit test" |
 | Contract | "`SessionScreenContractTests` asserts the new view id exists" |
-| Suite health | "`./nx.bat run FigureDrawing.Tests:test` stays green" |
+| Suite health | "`./nx.bat run DongoDraw.Tests:test` stays green" |
 | On-device | "a 60-image folder runs a 20-pose session with no visible stutter on the emulator" |
 | Budget | "peak decoded bitmap keeps its long side within 2x `MaxImageDimension` (1080 px)" |
 
@@ -190,7 +190,7 @@ a decision that will be made accidentally during implementation.
    [references/ticket-template.md](references/ticket-template.md), or
    [references/prd-template.md](references/prd-template.md) for a multi-ticket feature. The H1 is
    the issue title and is not part of the body. Links in the body must be absolute
-   (`https://github.com/JeffreyMcKinley/FigureDrawing/blob/master/docs/...`) — GitHub does not
+   (`https://github.com/JeffreyMcKinley/DongoDraw/blob/master/docs/...`) — GitHub does not
    resolve relative paths in issue bodies.
 2. File it: `gh issue create --title "<title>" --body-file <path> --label <state> --label <context>`.
    The state label is one of the five roles in

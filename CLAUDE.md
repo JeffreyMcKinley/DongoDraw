@@ -4,12 +4,12 @@ Overrides the generic guidance above. This workspace has no `package.json`, no l
 root `node_modules` — Nx is vendored under `.nx/installation/` and driven by a wrapper script.
 
 - Run every target as `./nx.bat run <project>:<target>` on Windows, `./nx run <project>:<target>`
-  elsewhere. Example: `./nx.bat run FigureDrawing.Tests:test`.
+  elsewhere. Example: `./nx.bat run DongoDraw.Tests:test`.
 - Do NOT use `pnpm nx`, `npm exec nx`, `npx nx` or `yarn nx`. pnpm is not installed, and the npm/npx
   forms resolve a globally installed Nx against this workspace's vendored version and die with
   `ERR_UNSUPPORTED_ESM_URL_SCHEME`.
 - The one command that bypasses Nx is the emulator run:
-  `dotnet build FigureDrawing.csproj -t:RunEmulator` — see
+  `dotnet build DongoDraw.csproj -t:RunEmulator` — see
   [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) §12.
 
 # Architecture
@@ -18,7 +18,7 @@ Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) before changing code. It defin
 split, the rules for crossing that boundary, threading and lifecycle requirements, the four-tier
 testing strategy (unit, contract, E2E-model, UI), and the anti-patterns that count as violations.
 
-Short version: all logic that can be written without Android goes in `FigureDrawing.Core` and is
+Short version: all logic that can be written without Android goes in `DongoDraw.Core` and is
 unit tested there; Activities only wire Core to views.
 
 ## Comments
@@ -87,14 +87,14 @@ rules below are the workflow around it, not a second policy.
 - When I ask for a feature, write tests first
 - Tests should FAIL initially (no implementation exists)
 - Only after tests are written, implement minimal code to pass
-- Run the fast tier with `./nx.bat run FigureDrawing.Tests:test`; the Appium tier is opt-in and
+- Run the fast tier with `./nx.bat run DongoDraw.Tests:test`; the Appium tier is opt-in and
   needs an emulator (`scripts/run-appium-tests.ps1`)
 
 ## Agent skills
 
 ### Issue tracker
 
-GitHub Issues on `JeffreyMcKinley/FigureDrawing`, driven with the `gh` CLI. The issue number is the
+GitHub Issues on `JeffreyMcKinley/DongoDraw`, driven with the `gh` CLI. The issue number is the
 ticket id — cite work as `#14`. The old `docs/prds/FD-0NN-*.md` files were migrated into issues and
 deleted. See [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md).
 

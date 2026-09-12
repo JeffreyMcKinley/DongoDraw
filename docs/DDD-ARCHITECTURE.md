@@ -4,7 +4,7 @@ Sections 1–14 of [ARCHITECTURE.md](ARCHITECTURE.md) describe the *physical* ar
 reference. Sections 15–21 here describe the *domain* architecture: what the app is about, which
 concepts belong together, and which rule each type is allowed to own. The per-object rules and
 numbered invariants live in a companion document, [DOMAIN-MODEL.md](DOMAIN-MODEL.md). The two views must agree —
-a bounded context that cannot live inside `FigureDrawing.Core` is a modelling mistake, not a
+a bounded context that cannot live inside `DongoDraw.Core` is a modelling mistake, not a
 reason to put a rule in an Activity.
 
 Derived from the code as of #4, following the `v3-ddd-architecture` skill. Two of that
@@ -50,14 +50,14 @@ Two distinctions carry real invariants and are worth stating twice:
 ## 16. Bounded contexts
 
 Four contexts, each a cohesive vocabulary with its own rules. All four live in
-`FigureDrawing.Core`; the Android layer holds only their adapters and screens.
+`DongoDraw.Core`; the Android layer holds only their adapters and screens.
 
 | Context | Owns | Core types today | Namespace / folder |
 |---|---|---|---|
-| **Reference Library** | Discovering drawable images under a picked folder; what counts as an image; the pool; whether the remembered folder is still usable | `ReferenceLibrary`, `IDocumentTree`, `DocumentEntry`, `LibraryReference`, `PersistedGrant` | `FigureDrawing.Core` (root) |
-| **Session Setup** | Parsing and validating the two inputs; the Start gate; producing a config | `SessionSetup`, `SessionConfig`, and the session's `Draft` phase | `FigureDrawing.Core` (root) |
-| **Session Execution** | Running a session: sequence, passes, counts, skip semantics, time accounting, per-pose countdown, breaks, resolving an id to a displayable image, the totals, the viewing aids | `DrawingSession<TImage>`, `ViewerTools` | `FigureDrawing.Core/Session` |
-| **Preferences** | The persisted settings document and its lifecycle | `Settings` | `FigureDrawing.Core/Data` |
+| **Reference Library** | Discovering drawable images under a picked folder; what counts as an image; the pool; whether the remembered folder is still usable | `ReferenceLibrary`, `IDocumentTree`, `DocumentEntry`, `LibraryReference`, `PersistedGrant` | `DongoDraw.Core` (root) |
+| **Session Setup** | Parsing and validating the two inputs; the Start gate; producing a config | `SessionSetup`, `SessionConfig`, and the session's `Draft` phase | `DongoDraw.Core` (root) |
+| **Session Execution** | Running a session: sequence, passes, counts, skip semantics, time accounting, per-pose countdown, breaks, resolving an id to a displayable image, the totals, the viewing aids | `DrawingSession<TImage>`, `ViewerTools` | `DongoDraw.Core/Session` |
+| **Preferences** | The persisted settings document and its lifecycle | `Settings` | `DongoDraw.Core/Data` |
 
 Supporting, deliberately outside the four: **Rendering** (`ImageDecoding`, `BitmapMath`,
 `GridContrast`, the `ImageView` wiring). It has no domain rules — only the memory-bound decode
@@ -283,10 +283,10 @@ The skill's four layers map onto the projects of §2 as follows. Dependencies po
 |---|---|---|
 | **Presentation** | `MainActivity`, `SessionActivity`, layouts, strings | App project |
 | **Application** | Use-case orchestration: wiring a session, advancing a pose, launching a screen | Mostly inside the Activities; resolving an id to a displayable image now sits inside the domain aggregate |
-| **Domain** | `DrawingSession<TImage>`, `SessionSetup`, `ReferenceLibrary`, `ViewerTools`, value objects | `FigureDrawing.Core` |
+| **Domain** | `DrawingSession<TImage>`, `SessionSetup`, `ReferenceLibrary`, `ViewerTools`, value objects | `DongoDraw.Core` |
 | **Infrastructure** | `Settings` (LiteDB), `LibraryLoader` + its `ContentResolverDocumentTree` (SAF, off the UI thread), `ImageDecoding` (BitmapFactory) | Core `Data/` + app project |
 
-The domain layer has no outward dependency: `FigureDrawing.Core` references only LiteDB, and only
+The domain layer has no outward dependency: `DongoDraw.Core` references only LiteDB, and only
 from `Data/`. Verified structurally by `AndroidBuildTests` and by the project references.
 
 **The application layer is the blurry one, on purpose.** `SessionActivity.OnCreate` composes the
@@ -334,9 +334,9 @@ Live findings, ordered by how much they cost. None is a blocker; each has a stat
    rather than the other way round; wiring the reset into the phase change is a one-line UX decision
    nobody has made.
 7. ~~**Image decoding runs on the main thread**~~ — closed on both sides. The player screen's half
-   went with [#5](https://github.com/JeffreyMcKinley/FigureDrawing/issues/5) (the next pose is decoded during the
+   went with [#5](https://github.com/JeffreyMcKinley/DongoDraw/issues/5) (the next pose is decoded during the
    current one), and the folder walk's half with
-   [#4](https://github.com/JeffreyMcKinley/FigureDrawing/issues/4) (the walk and up to 24 preview decodes moved off
+   [#4](https://github.com/JeffreyMcKinley/DongoDraw/issues/4) (the walk and up to 24 preview decodes moved off
    the UI thread). Grants are no longer accumulated either: picking a different folder releases the
    ones it supersedes and a restore re-takes the one in use (`INV-REF-4`).
 
@@ -375,7 +375,7 @@ goes:
 
 Success criteria for the DDD structure, checkable rather than aspirational:
 
-- [x] `FigureDrawing.Core` has zero `Android.*` / `Java.*` references — guarded by project setup and `AndroidBuildTests`
+- [x] `DongoDraw.Core` has zero `Android.*` / `Java.*` references — guarded by project setup and `AndroidBuildTests`
 - [x] Each Core type belongs to exactly one context in the §16 table, or to a named supporting group there; new types are added to it
 - [x] The catalogue stays at ten objects unless a new one earns its place — a new Core type must
       justify itself against [DOMAIN-MODEL.md §9](DOMAIN-MODEL.md#9-consolidation), or be added to

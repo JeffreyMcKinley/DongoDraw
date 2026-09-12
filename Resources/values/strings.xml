@@ -4,7 +4,7 @@
   Grouped by the screen it belongs to; the wording follows the Claude Design source.
 -->
 <resources>
-    <string name="app_name">FigureDrawing</string>
+    <string name="app_name">DongoDraw</string>
 
     <!-- Bottom tabs -->
     <string name="tab_session_text">Session</string>

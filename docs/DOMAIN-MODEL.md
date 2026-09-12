@@ -1,4 +1,4 @@
-# Domain Model — FigureDrawing
+# Domain Model — DongoDraw
 
 The objects this app is made of, and the rules each one must obey. One card per object: what
 identifies it, how long it lives, what it guarantees, what it is allowed to do, and what it must
@@ -1008,5 +1008,5 @@ Three consequences worth knowing before the next change:
   a provider that reports one document under two parents yields one pool entry. The old static
   enumerator would have listed it twice.
 - **`Settings` collides with `Android.Provider.Settings`.** `MainActivity` carries a
-  `using Settings = FigureDrawing.Data.Settings;` alias. Any new Android file that touches
+  `using Settings = DongoDraw.Data.Settings;` alias. Any new Android file that touches
   preferences needs the same alias or a qualified name.

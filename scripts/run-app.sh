@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploys and launches the FigureDrawing app on the FigureDrawing_Pixel emulator (Git Bash).
+# Deploys and launches the DongoDraw app on the DongoDraw_Pixel emulator (Git Bash).
 #   1. boots the emulator if no device is attached, waits for boot
 #   2. deploys + launches via `dotnet build -t:Run` (never a plain adb install — that crashes
 #      at launch with "No assemblies found")
@@ -9,7 +9,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-avd="FigureDrawing_Pixel"
+avd="DongoDraw_Pixel"
 target="${1:-}"
 
 jdk="${JavaSdkDirectory:-/c/Program Files/Microsoft/jdk-17.0.19.10-hotspot}"
@@ -32,7 +32,7 @@ echo "Device ready."
 
 # 2. Deploy + launch
 echo "Deploying to device..."
-args=("$repo_root/FigureDrawing.csproj" -t:Run -c Debug --nologo
+args=("$repo_root/DongoDraw.csproj" -t:Run -c Debug --nologo
       "-p:JavaSdkDirectory=$jdk" "-p:AndroidSdkDirectory=$sdk")
 [ -n "$target" ] && args+=("-p:AdbTarget=-s $target")
 
